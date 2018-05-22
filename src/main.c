@@ -240,13 +240,10 @@ void performI2CTransfer(void)
   i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;   
   I2C_TransferInit(I2C1, &i2cTransfer);
   
-  int k = 0;
   /* Sending data */ 
-  while (I2C_Transfer(I2C1) == i2cTransferInProgress){
-	  k++;
+  while (I2C_Transfer(I2C1) == i2cTransferInProgress){ ;
   }
   
-  printf("While loop executed %d times \n", k);
   /* Clearing pin to indicate end of transfer */
   GPIO_PinOutClear(gpioPortC, 0);      
   enableI2cSlaveInterrupts();  
