@@ -100,7 +100,11 @@ volatile bool i2c_startTx;
 					  I2C_IFC_SSTOP | \
 					  I2C_IFC_RSTART | \
 					  I2C_IFC_BUSHOLD | \
-					  I2C_IFC_ARBLOST)
+					  I2C_IFC_ARBLOST | \
+					  I2C_IFC_NACK | \
+					  I2C_IFC_ACK | \
+					  I2C_IFC_MSTOP | \
+					  I2C_IFC_BUSERR)
 //					  I2C_IFC_CLTO | \
 //					  I2C_IFC_BITO | \
 //					  I2C_IFC_RXUF | \
@@ -120,7 +124,11 @@ volatile bool i2c_startTx;
 					  I2C_IEN_SSTOP | \
 					  I2C_IEN_BUSHOLD | \
 					  I2C_IEN_RSTART | \
-					  I2C_IEN_ARBLOST)
+					  I2C_IEN_ARBLOST | \
+					  I2C_IEN_NACK | \
+					  I2C_IEN_ACK | \
+					  I2C_IEN_MSTOP | \
+					  I2C_IEN_BUSERR)
 //					  I2C_IEN_CLTO | \
 //					  I2C_IEN_BITO | \
 //					  I2C_IEN_RXUF | \
@@ -232,21 +240,23 @@ void performI2CTransfer(void)
   /* sending first byte ACK on address. The read operation can */
   /* only be stopped by NACKing a received byte, ie minimum 1 byte. */
   //if ((I2C1->IF & I2C_FLAG_READ) && !(i2cTransfer.buf[0].len)) {
-//	  printf("You are sending 0 bytes, aborted\n"); // TODO make this better. Handle Master Read?
-//  }
+	 // printf("You are sending 0 bytes, aborted\n"); // TODO make this better. Handle Master Read?
+	//  enableI2cSlaveInterrupts();
+//	  return;
+  //}
 
   /* Check if in busy state. Since this SW assumes single master, we can */
   /* just issue an abort. The BUSY state is normal after a reset. */
   //if (I2C1->STATE & I2C_STATE_BUSY) {
   //  I2C1->CMD = I2C_CMD_ABORT; // TODO handle abort conditions, attempt to re-send.
- /// }
+  //}
 
   
   /* Sending data */ 
-  while (I2C_Transfer(I2C1) == i2cTransferInProgress){ ;
-  }
+  //while (I2C_Transfer(I2C1) == i2cTransferInProgress){ ;
+  //}
   
-  enableI2cSlaveInterrupts();  
+  //enableI2cSlaveInterrupts();
 }
 
 
@@ -341,7 +351,7 @@ void RTC_IRQHandler(void)
   
   /* If RX is not in progress, a new transfer is started*/
   if (!i2c_rxInProgress){
-    disableI2cInterrupts();
+    //disableI2cInterrupts();
     i2c_startTx = true;
   }
 }
@@ -393,5 +403,10 @@ void I2C1_IRQHandler(void) {
   else if (status & I2C_IEN_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
+  }
+
+  else {
+	  I2C_Transfer(I2C1);
+	  I2C_IntClear(I2C1, 0x00);
   }
 }

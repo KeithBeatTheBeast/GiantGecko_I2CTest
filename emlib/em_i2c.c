@@ -704,7 +704,7 @@ I2C_TransferReturn_TypeDef I2C_Transfer(I2C_TypeDef *i2c)
 
   if (transfer->state == i2cStateDone) {
     /* Disable interrupt sources when done */
-    i2c->IEN = 0;
+    //i2c->IEN = 0;
 
     /* Update result unless some fault already occurred */
     if (transfer->result == i2cTransferInProgress) {
