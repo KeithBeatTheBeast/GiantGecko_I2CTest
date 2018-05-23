@@ -220,8 +220,27 @@ void performI2CTransfer(void)
   i2cTransfer.buf[0].data   = i2c_txBuffer;
   i2cTransfer.buf[0].len    = i2c_txBufferSize;
   i2cTransfer.buf[1].data   = i2c_rxBuffer;
-  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;   
-  I2C_TransferInit(I2C1, &i2cTransfer);
+  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
+ // I2C_TransferInit(I2C1, &i2cTransfer);
+
+  /*
+   * Replacing their code in here.
+   */
+
+  /* Make sure user is not trying to read 0 bytes, it is not */
+  /* possible according to I2C spec, since slave will always start */
+  /* sending first byte ACK on address. The read operation can */
+  /* only be stopped by NACKing a received byte, ie minimum 1 byte. */
+  if ((i2cTransfer->flags & I2C_FLAG_READ) && !(i2cTransfer->buf[0].len)) {
+	  printf("You are sending 0 bytes, aborted\n"); // TODO make this better. Handle Master Read?
+  }
+
+  /* Check if in busy state. Since this SW assumes single master, we can */
+  /* just issue an abort. The BUSY state is normal after a reset. */
+  if (I2C1->STATE & I2C_STATE_BUSY) {
+    I2C1->CMD = I2C_CMD_ABORT; // TODO handle abort conditions, attempt to re-send.
+  }
+
   
   /* Sending data */ 
   while (I2C_Transfer(I2C1) == i2cTransferInProgress){ ;
