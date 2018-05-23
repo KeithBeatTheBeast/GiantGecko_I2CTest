@@ -96,30 +96,35 @@ volatile bool i2c_startTx;
 
 // This should be used as the 2nd argument to I2C_IntClear
 // Different variable as RXDATAV and TXBL do not exist for the EFM32GG's IFC/IFS registers. Set to zero.
-#define i2c_IFC_flags (I2C_IEN_ADDR | \
-					  I2C_IEN_SSTOP) //| \
-//					  I2C_IEN_CLTO | \
-//					  I2C_IEN_BITO | \
-//					  I2C_IEN_RXUF | \
-//					  I2C_IEN_TXOF | \
-//					  I2C_IEN_BUSHOLD | \
-//					  I2C_IEN_BUSERR| \
-//					  I2C_IEN_ARBLOST | \
-//					  I2C_IEN_MSTOP | \
-//					  I2C_IEN_NACK | \
-//					  I2C_IEN_ACK | \
-//					  I2C_IEN_TXC | \
-//					  I2C_IEN_RSTART | \
-//					  I2C_IEN_START \
+#define i2c_IFC_flags (I2C_IFC_ADDR | \
+					  I2C_IFC_SSTOP | \
+					  I2C_IFC_RSTART | \
+					  I2C_IFC_BUSHOLD | \
+					  I2C_IFC_ARBLOST)
+//					  I2C_IFC_CLTO | \
+//					  I2C_IFC_BITO | \
+//					  I2C_IFC_RXUF | \
+//					  I2C_IFC_TXOF | \
+//					  I2C_IFC_BUSHOLD | \
+//					  I2C_IFC_BUSERR| \
+//					  I2C_IFC_ARBLOST | \
+//					  I2C_IFC_MSTOP | \
+//					  I2C_IFC_NACK | \
+//					  I2C_IFC_ACK | \
+//					  I2C_IFC_TXC | \
+//					  I2C_IFC_RSTART | \
+//					  I2C_IFC_START \
 // Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
 #define i2c_IEN_flags (I2C_IEN_ADDR | \
 					  I2C_IEN_RXDATAV | \
-					  I2C_IEN_SSTOP) //| \
+					  I2C_IEN_SSTOP | \
+					  I2C_IEN_BUSHOLD | \
+					  I2C_IEN_RSTART | \
+					  I2C_IEN_ARBLOST)
 //					  I2C_IEN_CLTO | \
 //					  I2C_IEN_BITO | \
 //					  I2C_IEN_RXUF | \
 //					  I2C_IEN_TXOF | \
-//					  I2C_IEN_BUSHOLD | \
 //					  I2C_IEN_BUSERR| \
 //					  I2C_IEN_ARBLOST | \
 //					  I2C_IEN_MSTOP | \
@@ -327,30 +332,47 @@ void RTC_IRQHandler(void)
  * @brief I2C Interrupt Handler.
  *        The interrupt table is in assembly startup file startup_efm32.s
  *****************************************************************************/
-void I2C1_IRQHandler(void)
-{
+void I2C1_IRQHandler(void) {
   int status;
    
   status = I2C1->IF;
 
-  if (status & I2C_IF_ADDR){
+  if (status & (I2C_IF_ADDR | I2C_IF_RSTART)) {
+	  /* Repeat Start condition
+	   * Assume auto-address matching
+	   * Reception has started
+	   */
+
+	  i2c_rxInProgress = true;
+	  I2C1->RXDATA;
+
+	  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IF_RSTART);
+  }
+
+  else if (status & I2C_IF_ADDR) {
     /* Address Match */ 
     /* Indicating that reception is started */
     i2c_rxInProgress = true;
     I2C1->RXDATA;
 
     I2C_IntClear(I2C1, I2C_IFC_ADDR);
+  }
 
-  } else if (status & I2C_IF_RXDATAV){
+  else if (status & I2C_IF_RXDATAV) {
     /* Data received */
     i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
     i2c_rxBufferIndex++;
   }
   
-  if(status & I2C_IEN_SSTOP){
+  else if (status & I2C_IEN_SSTOP) {
     /* Stop received, reception is ended */
     I2C_IntClear(I2C1, I2C_IEN_SSTOP);
     i2c_rxInProgress = false;
     i2c_rxBufferIndex = 0;
+  }
+
+  else if (status & I2C_IEN_ARBLOST) {
+	  // TODO handle ARBLOST better in the future
+	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
   }
 }
