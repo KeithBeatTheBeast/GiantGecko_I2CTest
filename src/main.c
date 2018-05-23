@@ -161,8 +161,6 @@ void enableI2cSlaveInterrupts(void){
   NVIC_EnableIRQ(I2C1_IRQn);
 }
 
-
-
 /**************************************************************************//**
  * @brief  disables I2C interrupts
  *****************************************************************************/
@@ -183,9 +181,6 @@ void setupI2C(void)
   /* Using PD6 (SDA) and PD7 (SCL) */
   GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
   GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
-  
-  // Setting up PC0 to indicate transfer direction
-  GPIO_PinModeSet(gpioPortC, 0, gpioModePushPull, 0);
 
   /* Enable pins at location 1 */
   I2C1->ROUTE = I2C_ROUTE_SDAPEN |
@@ -206,20 +201,6 @@ void setupI2C(void)
   enableI2cSlaveInterrupts(); 
 }
 
-
-
-/**************************************************************************//**
- * @brief  Receiving I2C data. Along with the I2C interrupt, it will keep the 
-  EFM32 in EM1 while the data is received.
- *****************************************************************************/
-void receiveI2CData(void){  
-  while(i2c_rxInProgress){
-    EMU_EnterEM1();
-  }
-}
-
-
-
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
@@ -227,9 +208,6 @@ void performI2CTransfer(void)
 {
   /* Transfer structure */
   I2C_TransferSeq_TypeDef i2cTransfer;
-  
-  /* Setting pin to indicate transfer */
-  GPIO_PinOutSet(gpioPortC, 0);
   
   /* Initializing I2C transfer */
   i2cTransfer.addr          = I2C_ADDRESS;
@@ -244,8 +222,6 @@ void performI2CTransfer(void)
   while (I2C_Transfer(I2C1) == i2cTransferInProgress){ ;
   }
   
-  /* Clearing pin to indicate end of transfer */
-  GPIO_PinOutClear(gpioPortC, 0);      
   enableI2cSlaveInterrupts();  
 }
 
@@ -307,7 +283,7 @@ int main(void)
   {
     if(i2c_rxInProgress){
        /* Receiving data */
-       receiveI2CData();
+    	while(i2c_rxInProgress){;}
 
        // A crude, but effective way to capitalize one letter at a time and then print to screen.
        i2c_rxBuffer[i] = toupper(i2c_rxBuffer[i]);
@@ -324,9 +300,6 @@ int main(void)
        /* Transmission complete */
        i2c_startTx = false;       
     }
-
-    /* Forever enter EM2. The RTC or I2C will wake up the EFM32 */
-    EMU_EnterEM2(false);    
   }
 }
 
