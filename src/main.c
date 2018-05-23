@@ -255,8 +255,6 @@ void setupRTC(void)
   RTC_Init(&rtcInit);
 }
 
-
-
 /**************************************************************************//**
  * @brief  Main function
  * Main is called from __iar_program_start, see assembly startup file
@@ -284,6 +282,9 @@ int main(void)
     if(i2c_rxInProgress){
        /* Receiving data */
     	while(i2c_rxInProgress){;}
+
+        //disableI2cInterrupts();
+        //i2c_startTx = true;
 
        // A crude, but effective way to capitalize one letter at a time and then print to screen.
        i2c_rxBuffer[i] = toupper(i2c_rxBuffer[i]);
