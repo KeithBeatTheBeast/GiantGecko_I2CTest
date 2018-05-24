@@ -223,7 +223,7 @@ void setupI2C(void)
 
   /* Setting up to enable slave mode */
   I2C1->SADDR = I2C_ADDRESS;
-  I2C1->CTRL |= I2C_CTRL_SLAVE | I2C_CTRL_AUTOACK | I2C_CTRL_AUTOSN; //TODO this sends STOP when NACK received
+  I2C1->CTRL |= I2C_CTRL_SLAVE | I2C_CTRL_AUTOACK;// | I2C_CTRL_AUTOSN | I2C_CTRL_AUTOSE; //TODO this sends STOP when NACK received
   enableI2cSlaveInterrupts(); 
 }
 
@@ -243,7 +243,7 @@ void performI2CTransfer(void) {
   txIndex = 0;
 
   // Load address, assuming write bit.
-  I2C1->TXDATA = i2cTransfer.addr | i2cTransfer.flags;
+  I2C1->TXDATA = i2cTransfer.addr | 0x0000; // Flag write was 0x0001....
 
   // Issue start condition
   I2C1->CMD |= I2C_CMD_START;
@@ -356,14 +356,16 @@ void RTC_IRQHandler(void)
  * If the pointer is less than the size of the buffer, we've still got more data
  * Add the next byte to the buffer, return false.
  */
-bool addNewByteToTxBuffer() {
+static inline bool addNewByteToTxBuffer() {
 
-	if (++txIndex == i2cTransfer.buf[0].len) {
+	if (++txIndex >= i2cTransfer.buf[0].len) {
 		return true;
 	}
 
 	else if (I2C1->IF & I2C_IF_TXBL) {
 		I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex];
+		I2C_IntClear(I2C1, I2C_IFC_TXC);
+		printf("Char at location %d: %c\n", txIndex, i2cTransfer.buf[0].data[txIndex]);
 	}
 	return false;
 }
@@ -377,64 +379,99 @@ void I2C1_IRQHandler(void) {
   int status = I2C1->IF;
   int state = I2C1->STATE;
 
-  if (status & (I2C_IF_ADDR | I2C_IF_RSTART)) {
-	  /* Repeat Start condition
-	   * Assume auto-address matching
-	   * Reception has started
-	   */
+  if (status & I2C_IF_BUSHOLD) {
+	  puts("BUSHOLD");
+	  printf("State: %x\n", state);
 
-	  i2c_rxInProgress = true;
-	  I2C1->RXDATA;
+	  if (state == 0xdf) {
+		  puts("Data transmitted, NACK Received");
+		  if (addNewByteToTxBuffer()) {
+			  I2C1->CMD |= I2C_CMD_STOP;
+			  puts("NACK Received after data, stop issued");
+		  }
 
-	  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IF_RSTART);
-  }
+		  else {
+			  I2C1->CMD |= I2C_CMD_CONT;
+			  puts("NACK Received after data, no stop issued");
+		  }
 
-  else if (status & I2C_IF_ADDR) {
-    /* Address Match */ 
-    /* Indicating that reception is started */
-    i2c_rxInProgress = true;
-    I2C1->RXDATA;
+		  I2C_IntClear(I2C1, I2C_IFC_NACK);
+	  }
 
-    I2C_IntClear(I2C1, I2C_IFC_ADDR);
-  }
-
-  else if (status & I2C_IF_RXDATAV) {
-    /* Data received */
-    i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
-    i2c_rxBufferIndex++;
-  }
-  
-  else if (status & I2C_IF_SSTOP) {
-    /* Stop received, reception is ended */
-    I2C_IntClear(I2C1, I2C_IEN_SSTOP);
-    i2c_rxInProgress = false;
-    i2c_rxBufferIndex = 0;
+	  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
   }
 
   else if (status & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
-  }
-
-  else if (status & I2C_IF_BUSHOLD) {
-	I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+	  puts("Arbitration Lost");
   }
 
   else if (status & I2C_IF_TXC) {
-	  I2C_IntClear(I2C1, I2C_IFC_TXC);
+	  I2C_IntClear(I2C1, I2C_IFC_TXC | I2C_IFC_BUSHOLD);
 
 	  if (addNewByteToTxBuffer()) {
 		  I2C1->CMD |= I2C_CMD_STOP;
+		  puts("TXC Add New Byte has reached end of line");
 	  }
+
+	  else {
+		  I2C1->CMD |= I2C_CMD_CONT;
+	  }
+	  puts("TXC else if");
   }
 
   else if ((status & I2C_IF_ACK) || (status & I2C_IF_NACK)) {
 	  if (status & I2C_IF_TXBL) {
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
+			  puts("(N)ACK add new byte returned true");
+		  }
+
+		  else {
+			  I2C1->CMD |= I2C_CMD_CONT;
+			  puts("(N)ACK add new byte returned false");
 		  }
 	  }
 
-	  I2C_IntClear(I2C1, I2C_IFC_ACK | I2C_IFC_NACK);
+	  I2C_IntClear(I2C1, I2C_IFC_ACK | I2C_IFC_NACK | I2C_IFC_BUSHOLD);
+	  puts("(N)ACK");
+  }
+
+  else if (status & (I2C_IF_ADDR | I2C_IF_RSTART)) {
+  	  /* Repeat Start condition
+  	   * Assume auto-address matching
+  	   * Reception has started
+  	   */
+
+  	  i2c_rxInProgress = true;
+  	  I2C1->RXDATA;
+
+  	  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IF_RSTART);
+  	  puts("Repeat Start on auto-matching address");
+    }
+  else if (status & I2C_IF_ADDR) {
+      /* Address Match */
+      /* Indicating that reception is started */
+	  i2c_rxInProgress = true;
+      I2C1->RXDATA;
+
+      I2C_IntClear(I2C1, I2C_IFC_ADDR);
+      puts("Address match non-repeat start");
+  }
+
+  else if (status & I2C_IF_RXDATAV) {
+      /* Data received */
+      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
+      i2c_rxBufferIndex++;
+      puts("Data received");
+  }
+
+  else if (status & I2C_IF_SSTOP) {
+      /* Stop received, reception is ended */
+      I2C_IntClear(I2C1, I2C_IEN_SSTOP);
+      i2c_rxInProgress = false;
+      i2c_rxBufferIndex = 0;
+      puts("Stop condition detected");
   }
 }
