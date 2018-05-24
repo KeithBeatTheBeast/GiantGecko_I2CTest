@@ -416,8 +416,12 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
   }
 
+  else if (status & I2C_IF_BUSHOLD) {
+	I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+  }
+
   else if (status & I2C_IF_TXC) {
-	  I2C_IntClear(I2C1, I2C_IF_TXC);
+	  I2C_IntClear(I2C1, I2C_IFC_TXC);
 
 	  if (addNewByteToTxBuffer()) {
 		  I2C1->CMD |= I2C_CMD_STOP;
@@ -432,6 +436,5 @@ void I2C1_IRQHandler(void) {
 	  }
 
 	  I2C_IntClear(I2C1, I2C_IFC_ACK | I2C_IFC_NACK);
-
   }
 }
