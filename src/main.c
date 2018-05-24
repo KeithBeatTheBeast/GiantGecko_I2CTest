@@ -83,11 +83,11 @@
 
 // Buffers++
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
-uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer);
-uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
+uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer) - 1;
+uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE * 2];
 uint8_t i2c_rxBufferIndex;
 
-int txIndex = 0;
+int txIndex = -1;
 
 // Transmission flags
 volatile bool i2c_rxInProgress;
@@ -172,20 +172,11 @@ void setupOscillators(void)
 /**************************************************************************//**
  * @brief  enables I2C slave interrupts
  *****************************************************************************/
-void enableI2cSlaveInterrupts(void){
+void enableI2C1Interrupt(void){
 
   I2C_IntClear(I2C1, i2c_IFC_flags);
   I2C_IntEnable(I2C1, i2c_IEN_flags);
   NVIC_EnableIRQ(I2C1_IRQn);
-}
-
-/**************************************************************************//**
- * @brief  disables I2C interrupts
- *****************************************************************************/
-void disableI2cInterrupts(void){
-  NVIC_DisableIRQ(I2C1_IRQn);
-  I2C_IntDisable(I2C1, i2c_IEN_flags);
-  I2C_IntClear(I2C1, i2c_IFC_flags);
 }
 
 /**************************************************************************//**
@@ -224,7 +215,7 @@ void setupI2C(void)
   /* Setting up to enable slave mode */
   I2C1->SADDR = I2C_ADDRESS;
   I2C1->CTRL |= I2C_CTRL_SLAVE | I2C_CTRL_AUTOACK;// | I2C_CTRL_AUTOSN | I2C_CTRL_AUTOSE; //TODO this sends STOP when NACK received
-  enableI2cSlaveInterrupts(); 
+  enableI2C1Interrupt();
 }
 
 /**************************************************************************//**
@@ -240,15 +231,16 @@ void performI2CTransfer(void) {
   }
 
   // Reset Index
-  txIndex = 0;
+  txIndex = -1;
 
   // Load address, assuming write bit.
   I2C1->TXDATA = i2cTransfer.addr | 0x0000; // Flag write was 0x0001....
+  //I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex]; // This was originally below.
 
   // Issue start condition
   I2C1->CMD |= I2C_CMD_START;
 
-  I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex];
+
 
   return;
 }
@@ -285,8 +277,7 @@ void setupRTC(void)
  * @brief  Main function
  * Main is called from __iar_program_start, see assembly startup file
  *****************************************************************************/
-int main(void)
-{  
+int main(void) {
   /* Initialize chip */
   CHIP_Init();
   
@@ -398,6 +389,53 @@ void I2C1_IRQHandler(void) {
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 	  }
 
+	  else if (state == 0xd7) {
+		  puts("Data transmitted, ACK Received");
+		  if (addNewByteToTxBuffer()) {
+			  I2C1->CMD |= I2C_CMD_STOP;
+			  puts("ACK Received after data, stop issued");
+		  }
+
+		  else {
+			  puts("ACK Received after data, no stop issued");
+		  }
+
+		  I2C_IntClear(I2C1, I2C_IFC_ACK);
+	  }
+
+	  else if (status & I2C_IF_ADDR) {
+	      /* Address Match */
+	      /* Indicating that reception is started */
+		  i2c_rxInProgress = true;
+	      I2C1->RXDATA;
+
+	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
+	      puts("Address match non-repeat start");
+	  }
+
+	  else if (status & I2C_IF_RXDATAV) {
+	      /* Data received */
+	      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
+	      i2c_rxBufferIndex++;
+	      puts("Data received");
+	  }
+
+	  else if (status & I2C_IF_SSTOP) {
+	      /* Stop received, reception is ended */
+	      I2C_IntClear(I2C1, I2C_IEN_SSTOP);
+	      i2c_rxInProgress = false;
+	      i2c_rxBufferIndex = 0;
+	      puts("Stop condition detected");
+	      printf("%s\n", i2c_rxBuffer);
+	  }
+
+	  else if (state == 0xb1) {
+		  puts("Data Received");
+	      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
+	      i2c_rxBufferIndex++;
+
+	  }
+
 	  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
   }
 
@@ -473,5 +511,6 @@ void I2C1_IRQHandler(void) {
       i2c_rxInProgress = false;
       i2c_rxBufferIndex = 0;
       puts("Stop condition detected");
+      printf("%s\n", i2c_rxBuffer);
   }
 }
