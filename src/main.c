@@ -87,9 +87,14 @@ uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer);
 uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
 uint8_t i2c_rxBufferIndex;
 
+int txIndex = 0;
+
 // Transmission flags
 volatile bool i2c_rxInProgress;
 volatile bool i2c_startTx;
+
+/* Transmission and Receiving Structure */
+I2C_TransferSeq_TypeDef i2cTransfer;
 
 // Temp variables for controlling ISR triggers.
 // Adjust as needed for debugging and driver development
@@ -104,7 +109,8 @@ volatile bool i2c_startTx;
 					  I2C_IFC_NACK | \
 					  I2C_IFC_ACK | \
 					  I2C_IFC_MSTOP | \
-					  I2C_IFC_BUSERR)
+					  I2C_IFC_BUSERR | \
+					  I2C_IFC_TXC)
 //					  I2C_IFC_CLTO | \
 //					  I2C_IFC_BITO | \
 //					  I2C_IFC_RXUF | \
@@ -128,7 +134,8 @@ volatile bool i2c_startTx;
 					  I2C_IEN_NACK | \
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
-					  I2C_IEN_BUSERR)
+					  I2C_IEN_BUSERR | \
+					  I2C_IEN_TXC)
 //					  I2C_IEN_CLTO | \
 //					  I2C_IEN_BITO | \
 //					  I2C_IEN_RXUF | \
@@ -138,8 +145,6 @@ volatile bool i2c_startTx;
 //					  I2C_IEN_MSTOP | \
 //					  I2C_IEN_NACK | \
 //					  I2C_IEN_ACK | \
-//					  I2C_IEN_TXBL | \
-//					  I2C_IEN_TXC | \
 //					  I2C_IEN_RSTART | \
 //					  I2C_IEN_START \
 
@@ -205,61 +210,48 @@ void setupI2C(void)
   
   /* Setting the status flags and index */
   i2c_rxInProgress = false;
-  i2c_startTx = false;
+  i2c_startTx = true;
   i2c_rxBufferIndex = 0;
+
+  /* Initializing I2C transfer */
+  i2cTransfer.addr          = I2C_ADDRESS;
+  i2cTransfer.flags         = I2C_FLAG_WRITE;
+  i2cTransfer.buf[0].data   = i2c_txBuffer;
+  i2cTransfer.buf[0].len    = sizeof(i2c_txBuffer);
+  i2cTransfer.buf[1].data   = i2c_rxBuffer;
+  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
 
   /* Setting up to enable slave mode */
   I2C1->SADDR = I2C_ADDRESS;
-  I2C1->CTRL |= I2C_CTRL_SLAVE | I2C_CTRL_AUTOACK | I2C_CTRL_AUTOSN;
+  I2C1->CTRL |= I2C_CTRL_SLAVE | I2C_CTRL_AUTOACK | I2C_CTRL_AUTOSN; //TODO this sends STOP when NACK received
   enableI2cSlaveInterrupts(); 
 }
 
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-void performI2CTransfer(void)
-{
-  /* Transfer structure */
-  I2C_TransferSeq_TypeDef i2cTransfer;
-  
-  /* Initializing I2C transfer */
-  i2cTransfer.addr          = I2C_ADDRESS;
-  i2cTransfer.flags         = I2C_FLAG_WRITE;
-  i2cTransfer.buf[0].data   = i2c_txBuffer;
-  i2cTransfer.buf[0].len    = i2c_txBufferSize;
-  i2cTransfer.buf[1].data   = i2c_rxBuffer;
-  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
-  I2C_TransferInit(I2C1, &i2cTransfer);
-
-  /*
-   * Replacing their code in here.
-   */
-
-  /* Make sure user is not trying to read 0 bytes, it is not */
-  /* possible according to I2C spec, since slave will always start */
-  /* sending first byte ACK on address. The read operation can */
-  /* only be stopped by NACKing a received byte, ie minimum 1 byte. */
-  //if ((I2C1->IF & I2C_FLAG_READ) && !(i2cTransfer.buf[0].len)) {
-	 // printf("You are sending 0 bytes, aborted\n"); // TODO make this better. Handle Master Read?
-	//  enableI2cSlaveInterrupts();
-//	  return;
-  //}
-
-  /* Check if in busy state. Since this SW assumes single master, we can */
-  /* just issue an abort. The BUSY state is normal after a reset. */
-  //if (I2C1->STATE & I2C_STATE_BUSY) {
-  //  I2C1->CMD = I2C_CMD_ABORT; // TODO handle abort conditions, attempt to re-send.
-  //}
+void performI2CTransfer(void) {
+  // I2C_TransferSeq_TypeDef used to be here.
+  // Made a global.
 
   
-  /* Sending data */ 
-  //while (I2C_Transfer(I2C1) == i2cTransferInProgress){ ;
-  //}
-  
-  //enableI2cSlaveInterrupts();
+  if (I2C1->STATE & I2C_STATE_BUSY) {
+	  I2C1->CMD |= I2C_CMD_ABORT; //TODO correct for the fact that we're designing for multiple masters.
+  }
+
+  // Reset Index
+  txIndex = 0;
+
+  // Load address, assuming write bit.
+  I2C1->TXDATA = i2cTransfer.addr | i2cTransfer.flags;
+
+  // Issue start condition
+  I2C1->CMD |= I2C_CMD_START;
+
+  I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex];
+
+  return;
 }
-
-
 
 /**************************************************************************//**
  * @brief  Setup RTC
@@ -299,7 +291,7 @@ int main(void)
   CHIP_Init();
   
   /* Configuring clocks in the Clock Management Unit (CMU) */
-  setupOscillators();
+  setupOscillators(); // TODO: The command for the I2C1 clock is causing RXUF flag to be raised.
   
   /* Setting up i2c */
   setupI2C();
@@ -333,7 +325,7 @@ int main(void)
        /* Transmitting data */
        performI2CTransfer();
        /* Transmission complete */
-       i2c_startTx = false;       
+       i2c_startTx = false;
     }
   }
 }
@@ -356,15 +348,34 @@ void RTC_IRQHandler(void)
   }
 }
 
+/*
+ * Function for adding new byte to TX buffer in the case of TXC and TXBL IF conditions
+ * First it increments the index of the tx buffer.
+ * If the pointer is equal to the size of the buffer, we've reached the end.
+ * Send TRUE, in which case the IRQ calling this function will send a STOP condition
+ * If the pointer is less than the size of the buffer, we've still got more data
+ * Add the next byte to the buffer, return false.
+ */
+bool addNewByteToTxBuffer() {
+
+	if (++txIndex == i2cTransfer.buf[0].len) {
+		return true;
+	}
+
+	else if (I2C1->IF & I2C_IF_TXBL) {
+		I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex];
+	}
+	return false;
+}
 
 /**************************************************************************//**
  * @brief I2C Interrupt Handler.
  *        The interrupt table is in assembly startup file startup_efm32.s
  *****************************************************************************/
 void I2C1_IRQHandler(void) {
-  int status;
    
-  status = I2C1->IF;
+  int status = I2C1->IF;
+  int state = I2C1->STATE;
 
   if (status & (I2C_IF_ADDR | I2C_IF_RSTART)) {
 	  /* Repeat Start condition
@@ -393,20 +404,34 @@ void I2C1_IRQHandler(void) {
     i2c_rxBufferIndex++;
   }
   
-  else if (status & I2C_IEN_SSTOP) {
+  else if (status & I2C_IF_SSTOP) {
     /* Stop received, reception is ended */
     I2C_IntClear(I2C1, I2C_IEN_SSTOP);
     i2c_rxInProgress = false;
     i2c_rxBufferIndex = 0;
   }
 
-  else if (status & I2C_IEN_ARBLOST) {
+  else if (status & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
   }
 
-  else {
-	  I2C_Transfer(I2C1);
-	  I2C_IntClear(I2C1, 0x00);
+  else if (status & I2C_IF_TXC) {
+	  I2C_IntClear(I2C1, I2C_IF_TXC);
+
+	  if (addNewByteToTxBuffer()) {
+		  I2C1->CMD |= I2C_CMD_STOP;
+	  }
+  }
+
+  else if ((status & I2C_IF_ACK) || (status & I2C_IF_NACK)) {
+	  if (status & I2C_IF_TXBL) {
+		  if (addNewByteToTxBuffer()) {
+			  I2C1->CMD |= I2C_CMD_STOP;
+		  }
+	  }
+
+	  I2C_IntClear(I2C1, I2C_IFC_ACK | I2C_IFC_NACK);
+
   }
 }
