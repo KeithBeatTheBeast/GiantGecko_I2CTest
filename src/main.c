@@ -92,11 +92,10 @@ uint8_t i2c_rxBufferIndex;
 int txIndex = -1;
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
-bool printfEnable = false;
+bool printfEnable = true;
 
 // Transmission flags
 volatile bool i2c_rxInProgress;
-volatile bool i2c_startTx;
 
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
@@ -115,11 +114,11 @@ static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IFC_ACK | \
 					  I2C_IFC_MSTOP | \
 					  I2C_IFC_BUSERR | \
-					  I2C_IFC_TXC)
+					  I2C_IFC_TXC | \
+					  I2C_IFC_BITO | \
+					  I2C_IFC_CLTO)
 
 //					  I2C_IFC_RXUF)
-//					  I2C_IFC_CLTO | \
-//					  I2C_IFC_BITO | \
 //					  I2C_IFC_TXOF | \
 //					  I2C_IFC_START \
 // Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
@@ -133,10 +132,10 @@ static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_BUSERR | \
-					  I2C_IEN_TXC)
+					  I2C_IEN_TXC | \
+					  I2C_IEN_BITO | \
+					  I2C_IEN_CLTO)
 //					  I2C_IEN_RXUF)
-//					  I2C_IEN_CLTO | \
-//					  I2C_IEN_BITO | \
 //					  I2C_IEN_TXOF | \
 //					  I2C_IEN_START \
 
@@ -195,7 +194,6 @@ void setupI2C(void)
   
   /* Setting the status flags and index */
   i2c_rxInProgress = false;
-  i2c_startTx = true;
 
   // Set rx buffer index
   i2c_rxBufferIndex = 0;
@@ -210,7 +208,12 @@ void setupI2C(void)
 
   /* Setting up to enable slave mode */
   I2C1->SADDR = I2C_ADDRESS;
-  I2C1->CTRL |= I2C_CTRL_SLAVE | I2C_CTRL_AUTOACK;// | I2C_CTRL_AUTOSN | I2C_CTRL_AUTOSE; //TODO this sends STOP when NACK received
+  I2C1->CTRL |= I2C_CTRL_SLAVE | \
+		  I2C_CTRL_AUTOACK | \
+		  I2C_CTRL_BITO_160PCC | \
+		  I2C_CTRL_GIBITO | \
+		  I2C_CTRL_CLTO_1024PPC; // | I2C_CTRL_AUTOSN | I2C_CTRL_AUTOSE; //TODO this sends STOP when NACK received
+
   enableI2C1Interrupt();
 }
 
@@ -231,35 +234,6 @@ void performI2CTransfer(void) {
 
   // Issue start condition
   I2C1->CMD |= I2C_CMD_START;
-  return;
-}
-
-/**************************************************************************//**
- * @brief  Setup RTC
- *****************************************************************************/
-void setupRTC(void)
-{  
-  /* Variable for calculating the RTC timeout */
-  uint16_t rtcTimeout;    
-  RTC_Init_TypeDef rtcInit = RTC_INIT_DEFAULT;
-  
-  /* Getting an individual timeout value based upon the UNIQUE_0 field in the
-  Device Information table */
-  rtcTimeout = (*(uint32_t*)0x0FE081F0);  
-  /* Setting a minimum timeout value */
-  if(rtcTimeout < RTC_MIN_TIMEOUT){
-    rtcTimeout += RTC_MIN_TIMEOUT;
-  }
- 
-  // Setting RTC timeout
-  RTC_CompareSet(0, rtcTimeout);
-
-  /* Enabling Interrupt from RTC */
-  RTC_IntEnable(RTC_IFC_COMP0);
-  NVIC_EnableIRQ(RTC_IRQn);
-
-  /* Enabling the RTC, using  */
-  RTC_Init(&rtcInit);
 }
 
 /**************************************************************************//**
@@ -271,58 +245,23 @@ int main(void) {
   CHIP_Init();
   
   /* Configuring clocks in the Clock Management Unit (CMU) */
-  setupOscillators(); // TODO: The command for the I2C1 clock is causing RXUF flag to be raised.
+  setupOscillators();
   
   // Use this to enable printfs.
   SWO_SetupForPrint();
 
   /* Setting up i2c */
   setupI2C();
-  
-  /* Setting up rtc*/
-  setupRTC();
 
   int i = 0; // Variable for capitalizing one character at a time.
-  while (1)
-  {
+  while (1) {
     if(i2c_rxInProgress){
        /* Receiving data */
     	while(i2c_rxInProgress){;}
-
-        //disableI2cInterrupts();
-        //i2c_startTx = true;
-
-       // A crude, but effective way to capitalize one letter at a time and then print to screen.
-       i2c_rxBuffer[i] = toupper(i2c_rxBuffer[i]);
-       printf("%s\n", i2c_rxBuffer);
-       i++;
-
-       // Cycle back at end of buffer. It's the same message each time.
-	   if (i > i2c_txBufferSize) {
-		   i = 0;
-	   }
-    }else if (i2c_startTx){
-       /* Transmitting data */
-       performI2CTransfer();
-       /* Transmission complete */
-       i2c_startTx = false;
     }
-  }
-}
 
-/**************************************************************************//**
- * @brief RTC Interrupt Handler, clears the flag.
- *        The interrupt table is in assembly startup file startup_efm32.s
- *****************************************************************************/
-void RTC_IRQHandler(void)
-{
-  /* Clear interrupt source */
-  RTC_IntClear(RTC_IFC_COMP0);
-  
-  /* If RX is not in progress, a new transfer is started*/
-  if (!i2c_rxInProgress){
-    //disableI2cInterrupts();
-    i2c_startTx = true;
+    /* Transmitting data */
+    performI2CTransfer();
   }
 }
 
@@ -336,7 +275,7 @@ void RTC_IRQHandler(void)
  */
 static inline bool addNewByteToTxBuffer() {
 
-	if (++txIndex >= i2cTransfer.buf[0].len) {
+	if (++txIndex >= i2cTransfer.buf[0].len - 1) {
 		return true;
 	}
 
@@ -497,5 +436,23 @@ void I2C1_IRQHandler(void) {
       i2c_rxBufferIndex = 0;
       if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
+  }
+
+  // Clock high timeout
+  // Resets bus to idle automatically
+  // Designed to go off on a reset so that I2C transactions can occur
+  // Releases a semaphore which the Tx task pends on
+  else if (status & I2C_IF_BITO) {
+	  I2C_IntClear(I2C1, I2C_IFC_BITO);
+	  // TODO add semaphore release
+	  if (printfEnable) {puts("BITO Timeout");}
+  }
+
+  // Clock low timeout
+  // Issue an abort and reset the bus to idle
+  else if (status & I2C_IF_CLTO) {
+	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  if (printfEnable) {puts("CLTO Timeout");}
   }
 }
