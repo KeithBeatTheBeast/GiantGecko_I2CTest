@@ -20,6 +20,7 @@
  *
  * DISCLAIMER OF WARRANTY/LIMITATION OF REMEDIES: Silicon Labs has no
  * obligation to support this Software. Silicon Labs is providing the
+ *
  * Software "AS IS", with no express or implied warranties of any kind,
  * including, but not limited to, any implied warranties of merchantability
  * or fitness for any particular purpose or warranties against infringement
@@ -83,11 +84,15 @@
 
 // Buffers++
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
-uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer) - 1;
+uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer) - 2; // Only 18 chars in the above message I want to send.
 uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE * 2];
 uint8_t i2c_rxBufferIndex;
 
+// Index of transmission buffer
 int txIndex = -1;
+
+// Boolean I use for debugging to determine whether or not I want a stream of printfs.
+bool printfEnable = false;
 
 // Transmission flags
 volatile bool i2c_rxInProgress;
@@ -154,7 +159,9 @@ I2C_TransferSeq_TypeDef i2cTransfer;
 void setupOscillators(void)
 {
   /* Enabling clock to the I2C, GPIO, LE */
-  CMU_ClockEnable(cmuClock_I2C1, true);
+  CMU_ClockEnable(cmuClock_I2C1, true); // TODO this command causes RXUF to be set for some reason
+  I2C_IntClear(I2C1, I2C_IFC_RXUF);
+
   CMU_ClockEnable(cmuClock_GPIO, true);
   CMU_ClockEnable(cmuClock_CORELE, true);
   
@@ -356,7 +363,7 @@ static inline bool addNewByteToTxBuffer() {
 	else if (I2C1->IF & I2C_IF_TXBL) {
 		I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex];
 		I2C_IntClear(I2C1, I2C_IFC_TXC);
-		printf("Char at location %d: %c\n", txIndex, i2cTransfer.buf[0].data[txIndex]);
+		if (printfEnable) {printf("Char at location %d: %c\n", txIndex, i2cTransfer.buf[0].data[txIndex]);}
 	}
 	return false;
 }
@@ -371,33 +378,31 @@ void I2C1_IRQHandler(void) {
   int state = I2C1->STATE;
 
   if (status & I2C_IF_BUSHOLD) {
-	  puts("BUSHOLD");
-	  printf("State: %x\n", state);
+
+	  if (printfEnable) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
 	  if (state == 0xdf) {
-		  puts("Data transmitted, NACK Received");
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  puts("NACK Received after data, stop issued");
+			  if (printfEnable) {puts("NACK Received after data, stop issued");}
 		  }
 
 		  else {
 			  I2C1->CMD |= I2C_CMD_CONT;
-			  puts("NACK Received after data, no stop issued");
+			 if (printfEnable) {puts("NACK Received after data, no stop issued");}
 		  }
 
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 	  }
 
 	  else if (state == 0xd7) {
-		  puts("Data transmitted, ACK Received");
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  puts("ACK Received after data, stop issued");
+			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
 		  }
 
 		  else {
-			  puts("ACK Received after data, no stop issued");
+			  if (printfEnable) {puts("ACK Received after data, no stop issued");}
 		  }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ACK);
@@ -410,14 +415,14 @@ void I2C1_IRQHandler(void) {
 	      I2C1->RXDATA;
 
 	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
-	      puts("Address match non-repeat start");
+	      if (printfEnable) {puts("Address match non-repeat start");}
 	  }
 
 	  else if (status & I2C_IF_RXDATAV) {
 	      /* Data received */
 	      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
 	      i2c_rxBufferIndex++;
-	      puts("Data received");
+	      if (printfEnable) {puts("Data received");}
 	  }
 
 	  else if (status & I2C_IF_SSTOP) {
@@ -425,12 +430,12 @@ void I2C1_IRQHandler(void) {
 	      I2C_IntClear(I2C1, I2C_IEN_SSTOP);
 	      i2c_rxInProgress = false;
 	      i2c_rxBufferIndex = 0;
-	      puts("Stop condition detected");
-	      printf("%s\n", i2c_rxBuffer);
+	      if (printfEnable) {puts("Stop condition detected");}
+	      printf("%s\n", i2c_rxBuffer); // This prints regardless
 	  }
 
 	  else if (state == 0xb1) {
-		  puts("Data Received");
+		  if (printfEnable) {puts("Data Received");}
 	      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
 	      i2c_rxBufferIndex++;
 
@@ -442,7 +447,7 @@ void I2C1_IRQHandler(void) {
   else if (status & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
-	  puts("Arbitration Lost");
+	  if (printfEnable) {puts("Arbitration Lost");}
   }
 
   else if (status & I2C_IF_TXC) {
@@ -450,30 +455,30 @@ void I2C1_IRQHandler(void) {
 
 	  if (addNewByteToTxBuffer()) {
 		  I2C1->CMD |= I2C_CMD_STOP;
-		  puts("TXC Add New Byte has reached end of line");
+		  if (printfEnable) {puts("TXC Add New Byte has reached end of line");}
 	  }
 
 	  else {
 		  I2C1->CMD |= I2C_CMD_CONT;
 	  }
-	  puts("TXC else if");
+	  if (printfEnable) {puts("TXC else if");}
   }
 
   else if ((status & I2C_IF_ACK) || (status & I2C_IF_NACK)) {
 	  if (status & I2C_IF_TXBL) {
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  puts("(N)ACK add new byte returned true");
+			  if (printfEnable) {puts("(N)ACK add new byte returned true");}
 		  }
 
 		  else {
 			  I2C1->CMD |= I2C_CMD_CONT;
-			  puts("(N)ACK add new byte returned false");
+			  if (printfEnable) {puts("(N)ACK add new byte returned false");}
 		  }
 	  }
 
 	  I2C_IntClear(I2C1, I2C_IFC_ACK | I2C_IFC_NACK | I2C_IFC_BUSHOLD);
-	  puts("(N)ACK");
+	  if (printfEnable) {puts("(N)ACK");}
   }
 
   else if (status & (I2C_IF_ADDR | I2C_IF_RSTART)) {
@@ -486,7 +491,7 @@ void I2C1_IRQHandler(void) {
   	  I2C1->RXDATA;
 
   	  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IF_RSTART);
-  	  puts("Repeat Start on auto-matching address");
+  	  if (printfEnable) {puts("Repeat Start on auto-matching address");}
     }
   else if (status & I2C_IF_ADDR) {
       /* Address Match */
@@ -495,14 +500,14 @@ void I2C1_IRQHandler(void) {
       I2C1->RXDATA;
 
       I2C_IntClear(I2C1, I2C_IFC_ADDR);
-      puts("Address match non-repeat start");
+      if (printfEnable) {puts("Address match non-repeat start");}
   }
 
   else if (status & I2C_IF_RXDATAV) {
       /* Data received */
       i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
       i2c_rxBufferIndex++;
-      puts("Data received");
+      if (printfEnable) {puts("Data received");}
   }
 
   else if (status & I2C_IF_SSTOP) {
@@ -510,7 +515,7 @@ void I2C1_IRQHandler(void) {
       I2C_IntClear(I2C1, I2C_IEN_SSTOP);
       i2c_rxInProgress = false;
       i2c_rxBufferIndex = 0;
-      puts("Stop condition detected");
+      if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
   }
 }
