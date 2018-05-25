@@ -73,6 +73,11 @@
 #include "em_emu.h"
 #include "em_gpio.h"
 
+// FreeRTOS includes
+#include "FreeRTOS.h"
+#include "FreeRTOSConfig.h"
+#include "semphr.h"
+
 // Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
 #include "makePrintfWork.h"
 
@@ -100,6 +105,8 @@ volatile bool i2c_rxInProgress;
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 
+static SemaphoreHandle_t busySem;
+
 // Temp variables for controlling ISR triggers.
 // Adjust as needed for debugging and driver development
 
@@ -119,8 +126,9 @@ static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IFC_CLTO)
 
 //					  I2C_IFC_RXUF)
-//					  I2C_IFC_TXOF | \
-//					  I2C_IFC_START \
+//					  I2C_IFC_TXOF
+//					  I2C_IFC_START
+
 // Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
 #define i2c_IEN_flags (I2C_IEN_ADDR | \
 					  I2C_IEN_RXDATAV | \
@@ -133,12 +141,12 @@ static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_BUSERR | \
 					  I2C_IEN_TXC | \
-					  I2C_IEN_BITO | \
-					  I2C_IEN_CLTO)
-//					  I2C_IEN_RXUF)
-//					  I2C_IEN_TXOF | \
-//					  I2C_IEN_START \
+					  I2C_IEN_BITO)
+					  //I2C_IEN_CLTO)
 
+//					  I2C_IEN_RXUF)
+//					  I2C_IEN_TXOF
+//					  I2C_IEN_START
 
 /**************************************************************************//**
  * @brief  Starting oscillators and enabling clocks
@@ -222,18 +230,19 @@ void setupI2C(void)
  *****************************************************************************/
 void performI2CTransfer(void) {
 
-  if (I2C1->STATE & I2C_STATE_BUSY) {
-	  I2C1->CMD |= I2C_CMD_ABORT; //TODO correct for the fact that we're designing for multiple masters.
-  }
+	// Pend the semaphore. This semaphore is initalized by main and given by the ISR
+	if (xSemaphoreTake(busySem, 1000) == pdFALSE) {
+		puts("Busy Semaphore Timeout");
+	}
 
-  // Reset Index
-  txIndex = -1;
+	// Reset Index
+	txIndex = -1;
 
-  // Load address, assuming write bit.
-  I2C1->TXDATA = i2cTransfer.addr | 0x0000; // Flag write was 0x0001....
+	// Load address, assuming write bit.
+	I2C1->TXDATA = i2cTransfer.addr | 0x0000; // Flag write was 0x0001....
 
-  // Issue start condition
-  I2C1->CMD |= I2C_CMD_START;
+	// Issue start condition
+	I2C1->CMD |= I2C_CMD_START;
 }
 
 /**************************************************************************//**
@@ -250,18 +259,21 @@ int main(void) {
   // Use this to enable printfs.
   SWO_SetupForPrint();
 
+  // Create the semaphore and report on it.
+  busySem = xSemaphoreCreateBinary();
+  if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
+  else { puts("Creation of Busy Semaphore Successful!");}
   /* Setting up i2c */
   setupI2C();
 
-  int i = 0; // Variable for capitalizing one character at a time.
   while (1) {
-    if(i2c_rxInProgress){
+	  /* Transmitting data */
+	  performI2CTransfer();
+
+	  if(i2c_rxInProgress){
        /* Receiving data */
     	while(i2c_rxInProgress){;}
     }
-
-    /* Transmitting data */
-    performI2CTransfer();
   }
 }
 
@@ -296,13 +308,33 @@ void I2C1_IRQHandler(void) {
   int status = I2C1->IF;
   int state = I2C1->STATE;
 
-  if (status & I2C_IF_BUSHOLD) {
+  // Clock high timeout
+  // Resets bus to idle automatically
+  // Designed to go off on a reset so that I2C transactions can occur
+  // Releases a semaphore which the Tx task pends on
+  if (status & I2C_IF_BITO) {
+	  I2C_IntClear(I2C1, I2C_IFC_BITO);
+	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+	  if (printfEnable) {puts("BITO Timeout");}
+  }
+
+  // Clock low timeout
+  // Issue an abort and reset the bus to idle
+  else if (status & I2C_IF_CLTO) {
+	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+	  if (printfEnable) {puts("CLTO Timeout");}
+  }
+
+  else if (status & I2C_IF_BUSHOLD) {
 
 	  if (printfEnable) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
 	  if (state == 0xdf) {
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
+			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
 			  if (printfEnable) {puts("NACK Received after data, stop issued");}
 		  }
 
@@ -317,6 +349,7 @@ void I2C1_IRQHandler(void) {
 	  else if (state == 0xd7) {
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
+			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
 			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
 		  }
 
@@ -374,6 +407,7 @@ void I2C1_IRQHandler(void) {
 
 	  if (addNewByteToTxBuffer()) {
 		  I2C1->CMD |= I2C_CMD_STOP;
+		  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
 		  if (printfEnable) {puts("TXC Add New Byte has reached end of line");}
 	  }
 
@@ -387,6 +421,7 @@ void I2C1_IRQHandler(void) {
 	  if (status & I2C_IF_TXBL) {
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
+			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
 			  if (printfEnable) {puts("(N)ACK add new byte returned true");}
 		  }
 
@@ -436,23 +471,5 @@ void I2C1_IRQHandler(void) {
       i2c_rxBufferIndex = 0;
       if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
-  }
-
-  // Clock high timeout
-  // Resets bus to idle automatically
-  // Designed to go off on a reset so that I2C transactions can occur
-  // Releases a semaphore which the Tx task pends on
-  else if (status & I2C_IF_BITO) {
-	  I2C_IntClear(I2C1, I2C_IFC_BITO);
-	  // TODO add semaphore release
-	  if (printfEnable) {puts("BITO Timeout");}
-  }
-
-  // Clock low timeout
-  // Issue an abort and reset the bus to idle
-  else if (status & I2C_IF_CLTO) {
-	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
-	  I2C1->CMD |= I2C_CMD_ABORT;
-	  if (printfEnable) {puts("CLTO Timeout");}
   }
 }
