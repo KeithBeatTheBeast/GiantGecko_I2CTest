@@ -115,19 +115,11 @@ I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IFC_ACK | \
 					  I2C_IFC_MSTOP | \
 					  I2C_IFC_BUSERR | \
-					  I2C_IFC_TXC)
+					  I2C_IFC_TXC | \
+					  I2C_IFC_RXUF)
 //					  I2C_IFC_CLTO | \
 //					  I2C_IFC_BITO | \
-//					  I2C_IFC_RXUF | \
 //					  I2C_IFC_TXOF | \
-//					  I2C_IFC_BUSHOLD | \
-//					  I2C_IFC_BUSERR| \
-//					  I2C_IFC_ARBLOST | \
-//					  I2C_IFC_MSTOP | \
-//					  I2C_IFC_NACK | \
-//					  I2C_IFC_ACK | \
-//					  I2C_IFC_TXC | \
-//					  I2C_IFC_RSTART | \
 //					  I2C_IFC_START \
 // Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
 #define i2c_IEN_flags (I2C_IEN_ADDR | \
@@ -140,18 +132,13 @@ I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_BUSERR | \
-					  I2C_IEN_TXC)
+					  I2C_IEN_TXC | \
+					  I2C_IEN_RXUF)
 //					  I2C_IEN_CLTO | \
 //					  I2C_IEN_BITO | \
-//					  I2C_IEN_RXUF | \
 //					  I2C_IEN_TXOF | \
-//					  I2C_IEN_BUSERR| \
-//					  I2C_IEN_ARBLOST | \
-//					  I2C_IEN_MSTOP | \
-//					  I2C_IEN_NACK | \
-//					  I2C_IEN_ACK | \
-//					  I2C_IEN_RSTART | \
 //					  I2C_IEN_START \
+
 
 /**************************************************************************//**
  * @brief  Starting oscillators and enabling clocks
@@ -160,7 +147,6 @@ void setupOscillators(void)
 {
   /* Enabling clock to the I2C, GPIO, LE */
   CMU_ClockEnable(cmuClock_I2C1, true); // TODO this command causes RXUF to be set for some reason
-  I2C_IntClear(I2C1, I2C_IFC_RXUF);
 
   CMU_ClockEnable(cmuClock_GPIO, true);
   CMU_ClockEnable(cmuClock_CORELE, true);
@@ -232,7 +218,6 @@ void performI2CTransfer(void) {
   // I2C_TransferSeq_TypeDef used to be here.
   // Made a global.
 
-  
   if (I2C1->STATE & I2C_STATE_BUSY) {
 	  I2C1->CMD |= I2C_CMD_ABORT; //TODO correct for the fact that we're designing for multiple masters.
   }
@@ -242,13 +227,9 @@ void performI2CTransfer(void) {
 
   // Load address, assuming write bit.
   I2C1->TXDATA = i2cTransfer.addr | 0x0000; // Flag write was 0x0001....
-  //I2C1->TXDATA = i2cTransfer.buf[0].data[txIndex]; // This was originally below.
 
   // Issue start condition
   I2C1->CMD |= I2C_CMD_START;
-
-
-
   return;
 }
 
@@ -294,6 +275,9 @@ int main(void) {
   /* Setting up i2c */
   setupI2C();
   
+  I2C_IntClear(I2C1, I2C_IFC_RXUF);
+  I2C1->IFC = 0x2000;
+
   /* Setting up rtc*/
   setupRTC();
   
@@ -327,8 +311,6 @@ int main(void) {
     }
   }
 }
-
-
 
 /**************************************************************************//**
  * @brief RTC Interrupt Handler, clears the flag.
@@ -512,10 +494,16 @@ void I2C1_IRQHandler(void) {
 
   else if (status & I2C_IF_SSTOP) {
       /* Stop received, reception is ended */
-      I2C_IntClear(I2C1, I2C_IEN_SSTOP);
+      I2C_IntClear(I2C1, I2C_IFC_SSTOP);
       i2c_rxInProgress = false;
       i2c_rxBufferIndex = 0;
       if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
+  }
+
+  else if (status & I2C_IF_RXUF) {
+	  if (printfEnable) {puts("RX Underflow detected");}
+	  I2C_IntClear(I2C1, I2C_IFC_RXUF);
+
   }
 }
