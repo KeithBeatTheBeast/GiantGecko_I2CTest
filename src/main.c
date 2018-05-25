@@ -99,7 +99,7 @@ volatile bool i2c_rxInProgress;
 volatile bool i2c_startTx;
 
 /* Transmission and Receiving Structure */
-I2C_TransferSeq_TypeDef i2cTransfer;
+static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 
 // Temp variables for controlling ISR triggers.
 // Adjust as needed for debugging and driver development
@@ -115,8 +115,9 @@ I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IFC_ACK | \
 					  I2C_IFC_MSTOP | \
 					  I2C_IFC_BUSERR | \
-					  I2C_IFC_TXC | \
-					  I2C_IFC_RXUF)
+					  I2C_IFC_TXC)
+
+//					  I2C_IFC_RXUF)
 //					  I2C_IFC_CLTO | \
 //					  I2C_IFC_BITO | \
 //					  I2C_IFC_TXOF | \
@@ -132,8 +133,8 @@ I2C_TransferSeq_TypeDef i2cTransfer;
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_BUSERR | \
-					  I2C_IEN_TXC | \
-					  I2C_IEN_RXUF)
+					  I2C_IEN_TXC)
+//					  I2C_IEN_RXUF)
 //					  I2C_IEN_CLTO | \
 //					  I2C_IEN_BITO | \
 //					  I2C_IEN_TXOF | \
@@ -146,7 +147,7 @@ I2C_TransferSeq_TypeDef i2cTransfer;
 void setupOscillators(void)
 {
   /* Enabling clock to the I2C, GPIO, LE */
-  CMU_ClockEnable(cmuClock_I2C1, true); // TODO this command causes RXUF to be set for some reason
+  CMU_ClockEnable(cmuClock_I2C1, true);
 
   CMU_ClockEnable(cmuClock_GPIO, true);
   CMU_ClockEnable(cmuClock_CORELE, true);
@@ -195,6 +196,8 @@ void setupI2C(void)
   /* Setting the status flags and index */
   i2c_rxInProgress = false;
   i2c_startTx = true;
+
+  // Set rx buffer index
   i2c_rxBufferIndex = 0;
 
   /* Initializing I2C transfer */
@@ -215,8 +218,6 @@ void setupI2C(void)
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
 void performI2CTransfer(void) {
-  // I2C_TransferSeq_TypeDef used to be here.
-  // Made a global.
 
   if (I2C1->STATE & I2C_STATE_BUSY) {
 	  I2C1->CMD |= I2C_CMD_ABORT; //TODO correct for the fact that we're designing for multiple masters.
@@ -272,17 +273,14 @@ int main(void) {
   /* Configuring clocks in the Clock Management Unit (CMU) */
   setupOscillators(); // TODO: The command for the I2C1 clock is causing RXUF flag to be raised.
   
+  // Use this to enable printfs.
+  SWO_SetupForPrint();
+
   /* Setting up i2c */
   setupI2C();
   
-  I2C_IntClear(I2C1, I2C_IFC_RXUF);
-  I2C1->IFC = 0x2000;
-
   /* Setting up rtc*/
   setupRTC();
-  
-  // Use this to enable printfs.
-  SWO_SetupForPrint();
 
   int i = 0; // Variable for capitalizing one character at a time.
   while (1)
@@ -499,11 +497,5 @@ void I2C1_IRQHandler(void) {
       i2c_rxBufferIndex = 0;
       if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
-  }
-
-  else if (status & I2C_IF_RXUF) {
-	  if (printfEnable) {puts("RX Underflow detected");}
-	  I2C_IntClear(I2C1, I2C_IFC_RXUF);
-
   }
 }
