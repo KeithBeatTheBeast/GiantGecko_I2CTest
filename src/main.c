@@ -91,7 +91,7 @@
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
 uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer) - 2; // Only 18 chars in the above message I want to send.
 uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE * 2];
-uint8_t i2c_rxBufferIndex, i2c_txBufferIndex;
+int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
 bool printfEnable = true;
@@ -116,11 +116,11 @@ static SemaphoreHandle_t busySem;
 					  I2C_IFC_NACK | \
 					  I2C_IFC_ACK | \
 					  I2C_IFC_MSTOP | \
-					  I2C_IFC_BUSERR | \
 					  I2C_IFC_TXC | \
 					  I2C_IFC_BITO)
 					  //I2C_IFC_CLTO)
 
+// 					  I2C_IFC_BUSERR
 //					  I2C_IFC_RXUF)
 //					  I2C_IFC_TXOF
 //					  I2C_IFC_START
@@ -135,11 +135,11 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_NACK | \
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
-					  I2C_IEN_BUSERR | \
 					  I2C_IEN_TXC | \
 					  I2C_IEN_BITO)
 					  //I2C_IEN_CLTO)
-
+//					  I2C_IEN_MSTOP
+// 					  I2C_IEN_BUSERR
 //					  I2C_IEN_RXUF)
 //					  I2C_IEN_TXOF
 //					  I2C_IEN_START
@@ -234,7 +234,7 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, 500) == pdTRUE) {
+		if (xSemaphoreTake(busySem, 1000) == pdTRUE) {
 			puts("Semaphore Taken");
 		}
 
@@ -294,6 +294,15 @@ static inline bool addNewByteToTxBuffer() {
 	return false;
 }
 
+static inline bool checkBusHoldStates(int status){
+	return ((status & 0x97) | \
+			(status & 0x9F) | \
+			(status & 0xD7) | \
+			(status & 0xDF) | \
+			(status & 0x71) | \
+			(status & 0xB1));
+}
+
 /**************************************************************************//**
  * @brief I2C Interrupt Handler.
  *        The interrupt table is in assembly startup file startup_efm32.s
@@ -319,9 +328,9 @@ void I2C1_IRQHandler(void) {
    * For some reason, it seems necessary to do these twice.
    * Probably unlikely.
    */
-  else if (status & I2C_IF_BUSHOLD) {
+  else if (checkBusHoldStates(status)) {
 
-	  if (printfEnable) { puts("BUSHOLD"); printf("State: %x\n", state); }
+	  if (printfEnable & (status & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
 	  /*
 	   * Master Transmitter BUSHOLD Conditionals
@@ -347,7 +356,7 @@ void I2C1_IRQHandler(void) {
 
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+			  //xSemaphoreGiveFromISR(busySem, txTaskPrio);
 			  if (printfEnable) {puts("NACK Received after data, stop issued");}
 		  }
 
@@ -371,7 +380,7 @@ void I2C1_IRQHandler(void) {
 
 		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+			  //xSemaphoreGiveFromISR(busySem, txTaskPrio);
 			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
 		  }
 
@@ -391,7 +400,7 @@ void I2C1_IRQHandler(void) {
 	  /*
 	   * Slave Receiver:
 	   * Start Condition on the line has been detected
-	   * Automatic Address Matchin has determined a Master is trying to talk to this device
+	   * Automatic Address Matching has determined a Master is trying to talk to this device
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer, say we're receiving
 	   */
@@ -415,15 +424,35 @@ void I2C1_IRQHandler(void) {
 	      if (printfEnable) {puts("Data received");}
 	  }
 
-	  /*
-	   * All the states relevant for Master Transmitter and Slave Receiver have been taken care of
-	   * Something weird, or to do with Master Receiver/Slave Transmitter
-	   */
-	  else {
-		  printf("Something else in BUSHOLD!\n");
+	  if (status & I2C_IF_BUSHOLD) {
+		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
 	  }
+  }
 
-	  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+  /*
+   * Stop condition detected - this flag is raised regardless
+   * of whether or not the Master was speaking to us
+   * CHECK and see if we were spoken to
+   * By looking at the index of the Rx buffer
+   */
+  else if (status & I2C_IF_SSTOP) {
+	  if (printfEnable) {puts("Stop condition detected");}
+	  if (i2c_rxBufferIndex != 0) {
+		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+	  }
+      I2C_IntClear(I2C1, I2C_IFC_SSTOP);
+  }
+
+  /*
+   * Repeated Start - This is also a valid way to end transmission
+   * Do the same as SSTOP
+   */
+  else if (status & I2C_IF_RSTART) {
+	  if (printfEnable) {puts("Repeated condition detected");}
+	  if (i2c_rxBufferIndex != 0) {
+		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+	  }
+      I2C_IntClear(I2C1, I2C_IFC_RSTART);
   }
 
   else if (status & I2C_IF_ARBLOST) {
@@ -433,70 +462,15 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("Arbitration Lost");}
   }
 
-  else if (status & I2C_IF_TXC) {
-	  I2C_IntClear(I2C1, I2C_IFC_TXC | I2C_IFC_BUSHOLD);
-
-	  if (addNewByteToTxBuffer()) {
-		  I2C1->CMD |= I2C_CMD_STOP;
-		  xSemaphoreGiveFromISR(busySem, txTaskPrio);
-		  if (printfEnable) {puts("TXC Add New Byte has reached end of line");}
-	  }
-
-	  else {
-		  I2C1->CMD |= I2C_CMD_CONT;
-	  }
-	  if (printfEnable) {puts("TXC else if");}
-  }
-
-  else if ((status & I2C_IF_ACK) || (status & I2C_IF_NACK)) {
-	  if (status & I2C_IF_TXBL) {
-		  if (addNewByteToTxBuffer()) {
-			  I2C1->CMD |= I2C_CMD_STOP;
-			  xSemaphoreGiveFromISR(busySem, txTaskPrio);
-			  if (printfEnable) {puts("(N)ACK add new byte returned true");}
-		  }
-
-		  else {
-			  I2C1->CMD |= I2C_CMD_CONT;
-			  if (printfEnable) {puts("(N)ACK add new byte returned false");}
-		  }
-	  }
-
-	  I2C_IntClear(I2C1, I2C_IFC_ACK | I2C_IFC_NACK | I2C_IFC_BUSHOLD);
-	  if (printfEnable) {puts("(N)ACK");}
-  }
-
-  else if (status & (I2C_IF_ADDR | I2C_IF_RSTART)) {
-  	  /* Repeat Start condition
-  	   * Assume auto-address matching
-  	   * Reception has started
-  	   */
-  	  I2C1->RXDATA;
-
-  	  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IF_RSTART);
-  	  if (printfEnable) {puts("Repeat Start on auto-matching address");}
-    }
-  else if (status & I2C_IF_ADDR) {
-      /* Address Match */
-      /* Indicating that reception is started */
-      I2C1->RXDATA;
-      i2c_rxBufferIndex = 0; // Reset Index
-
-      I2C_IntClear(I2C1, I2C_IFC_ADDR);
-      if (printfEnable) {puts("Address match non-repeat start");}
-  }
-
-  else if (status & I2C_IF_RXDATAV) {
-      /* Data received */
-      i2c_rxBuffer[i2c_rxBufferIndex++] = I2C1->RXDATA;
-      if (printfEnable) {puts("Data received");}
-  }
-
-  else if (status & I2C_IF_SSTOP) {
-      /* Stop received, reception is ended */
-      I2C_IntClear(I2C1, I2C_IFC_SSTOP);
-      if (printfEnable) {puts("Stop condition detected");}
-      printf("%s\n", i2c_rxBuffer);
+  /*
+   * Master has transmitted stop condition
+   * Transmission is officially over
+   * Report success to upper layer
+   * Release semaphore
+   */
+  else if (status & I2C_IF_MSTOP) {
+	  I2C_IntClear(I2C1, I2C_IFC_MSTOP);
+	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
   }
 
   /*
