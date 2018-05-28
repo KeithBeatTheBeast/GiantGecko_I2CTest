@@ -190,9 +190,6 @@ void setupI2C(void)
   /* Setting the status flags and index */
   i2c_rxInProgress = false;
 
-  // Set rx buffer index, tx huffer is reset in performI2CTransfer
-  i2c_rxBufferIndex = 0;
-
   /* Initializing I2C transfer */
   i2cTransfer.addr          = I2C_ADDRESS;
   i2cTransfer.flags         = I2C_FLAG_WRITE;
@@ -229,8 +226,8 @@ void performI2CTransfer(void) {
 	// Reset Index
 	i2c_txBufferIndex = -1;
 
-	// Load address, assuming write bit.
-	I2C1->TXDATA = i2cTransfer.addr | 0x0000; // Flag write was 0x0001....
+	// Load address.
+	I2C1->TXDATA = i2cTransfer.addr & 0xFE; // Ensure LSB is Write
 
 	// Issue start condition
 	I2C1->CMD |= I2C_CMD_START;
@@ -274,7 +271,7 @@ int main(void) {
 }
 
 /*
- * @brief Adds new byte to Tx buffer, tells if empty or not
+ * @brief If there is more data to add to the Tx buffer, that data is added.
  * Function for adding new byte to TX buffer in the case of TXC and TXBL IF conditions
  * First it increments the index of the tx buffer.
  * If the pointer is equal to the size of the buffer, we've reached the end.
@@ -305,30 +302,48 @@ void I2C1_IRQHandler(void) {
   int status = I2C1->IF;
   int state = I2C1->STATE;
 
-  // Clock high timeout
-  // Resets bus to idle automatically
-  // Designed to go off on a reset so that I2C transactions can occur
-  // Releases a semaphore which the Tx task pends on
+  /*
+   * BITO - Bus Idle Timeout
+   * Goes off when SCL has been high for a period specified in I2C_CTRL
+   * Assumes bus is idle, and master operations can begin.
+   */
   if (status & I2C_IF_BITO) {
 	  I2C_IntClear(I2C1, I2C_IFC_BITO);
 	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
-  // Clock low timeout
-  // Issue an abort and reset the bus to idle
-//  else if (status & I2C_IF_CLTO) {
-//	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
-//	  I2C1->CMD |= I2C_CMD_ABORT;
-//	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
-//	  if (printfEnable) {puts("CLTO Timeout");}
-//  }
-
+  /*
+   * BUSHOLD interrupt flag set
+   * For some reason, it seems necessary to do these twice.
+   * Probably unlikely.
+   */
   else if (status & I2C_IF_BUSHOLD) {
 
 	  if (printfEnable) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
-	  if (state == 0xdf) {
+	  /*
+	   * Master Transmitter BUSHOLD Conditionals
+	   * Table 16.5, Page 426-427 of the EFM32GG Reference Manual
+	   * This part of the sub-conditionals handles states
+	   * 0x97, 0x9F, 0xD7 and 0xDF
+	   * State 0x57 (Start Sent, but no Address in TX) is NOT
+	   * handled here - because the address is loaded into the TX buffer
+	   * In the performI2C function before the start condition is requested.
+	   */
+
+	  /*
+	   * Master Transmitter:
+	   * ADDR+W (0x9F) or
+	   * DATA (0xDF)
+	   * has been sent and a NACK has been received
+	   * For testing purposes, send another byte, if available.
+	   * Trigger a stop if not
+	   * TODO completed version should cut contact (stop) and send error message to upper layer
+	   * Can likely be done by using the CTRL_AUTOSN flag and handling in ISR.
+	   */
+	  if (state == 0xdf || state == 0x9f) {
+
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
 			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
@@ -343,8 +358,17 @@ void I2C1_IRQHandler(void) {
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 	  }
 
-	  else if (state == 0xd7) {
-		  if (addNewByteToTxBuffer()) {
+	  /*
+	   * Master Transmitter:
+	   * ADDR+W (0x97) or
+	   * DATA (0xD7)
+	   * has been sent and an ACK has been received
+	   * Since it's an ACK, we send another byte, unless at the end of message
+	   * Then we'll send a stop condition
+	   */
+	  else if (state == 0xd7 || state == 0x97) {
+
+		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
 			  I2C1->CMD |= I2C_CMD_STOP;
 			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
 			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
@@ -357,40 +381,59 @@ void I2C1_IRQHandler(void) {
 		  I2C_IntClear(I2C1, I2C_IFC_ACK);
 	  }
 
-	  else if (status & I2C_IF_ADDR) {
-	      /* Address Match */
-	      /* Indicating that reception is started */
+	  /*
+	   * Slave Receiver BUSHOLD Conditionals
+	   * See Table 16.10, page 433 of the EFM32GG Reference Manual
+	   * All States that would trigger a BUSHOLD are accounted for.
+	   */
+
+	  /*
+	   * Slave Receiver:
+	   * Start Condition on the line has been detected
+	   * Automatic Address Matchin has determined a Master is trying to talk to this device
+	   * Basically the same code from Silicon Labs
+	   * Read the Rx buffer, say we're receiving
+	   */
+	  else if (state == 0x71) {
 		  i2c_rxInProgress = true;
 	      I2C1->RXDATA;
+	      i2c_rxBufferIndex = 0;
 
 	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
 	  }
 
-	  else if (status & I2C_IF_RXDATAV) {
+	  /*
+	   * Slave Receiver:
+	   * The Master has sent data
+	   * Load it into the Rx buffer and increment pointer
+	   * RXDATA IF is cleared when the buffer is read.
+	   */
+	  else if (state == 0xB1) {
 	      /* Data received */
-	      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
-	      i2c_rxBufferIndex++;
+	      i2c_rxBuffer[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
-	  else if (status & I2C_IF_SSTOP) {
-	      /* Stop received, reception is ended */
-	      I2C_IntClear(I2C1, I2C_IEN_SSTOP);
-	      i2c_rxInProgress = false;
-	      i2c_rxBufferIndex = 0;
-	      if (printfEnable) {puts("Stop condition detected");}
-	      printf("%s\n", i2c_rxBuffer); // This prints regardless
-	  }
-
-	  else if (state == 0xb1) {
-		  if (printfEnable) {puts("Data Received");}
-	      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
-	      i2c_rxBufferIndex++;
-
+	  /*
+	   * All the states relevant for Master Transmitter and Slave Receiver have been taken care of
+	   * Something weird, or to do with Master Receiver/Slave Transmitter
+	   */
+	  else {
+		  printf("Something else in BUSHOLD!\n");
 	  }
 
 	  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+  }
+
+  /*
+   * Clock Low Timeout
+   */
+  else if (status & I2C_IF_CLTO) {
+	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+	  if (printfEnable) {puts("CLTO Timeout");}
   }
 
   else if (status & I2C_IF_ARBLOST) {
@@ -449,6 +492,7 @@ void I2C1_IRQHandler(void) {
       /* Indicating that reception is started */
 	  i2c_rxInProgress = true;
       I2C1->RXDATA;
+      i2c_rxBufferIndex = 0; // Reset Index
 
       I2C_IntClear(I2C1, I2C_IFC_ADDR);
       if (printfEnable) {puts("Address match non-repeat start");}
@@ -456,8 +500,7 @@ void I2C1_IRQHandler(void) {
 
   else if (status & I2C_IF_RXDATAV) {
       /* Data received */
-      i2c_rxBuffer[i2c_rxBufferIndex] = I2C1->RXDATA;
-      i2c_rxBufferIndex++;
+      i2c_rxBuffer[i2c_rxBufferIndex++] = I2C1->RXDATA;
       if (printfEnable) {puts("Data received");}
   }
 
@@ -465,7 +508,6 @@ void I2C1_IRQHandler(void) {
       /* Stop received, reception is ended */
       I2C_IntClear(I2C1, I2C_IFC_SSTOP);
       i2c_rxInProgress = false;
-      i2c_rxBufferIndex = 0;
       if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
   }
