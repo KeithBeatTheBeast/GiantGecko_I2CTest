@@ -64,7 +64,6 @@
  ******************************************************************************/
 
 #include <stdbool.h>
-#include <ctype.h> // Added to uppercase message
 #include "em_device.h"
 #include "em_chip.h"
 #include "em_i2c.h"
@@ -77,6 +76,7 @@
 #include "FreeRTOS.h"
 #include "FreeRTOSConfig.h"
 #include "semphr.h"
+#include "task.h"
 
 // Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
 #include "makePrintfWork.h"
@@ -96,11 +96,10 @@ uint8_t i2c_rxBufferIndex, i2c_txBufferIndex;
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
 bool printfEnable = true;
 
-// Transmission flags
-volatile bool i2c_rxInProgress;
-
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
+
+#define txTaskPrio							2
 
 static SemaphoreHandle_t busySem;
 
@@ -119,8 +118,8 @@ static SemaphoreHandle_t busySem;
 					  I2C_IFC_MSTOP | \
 					  I2C_IFC_BUSERR | \
 					  I2C_IFC_TXC | \
-					  I2C_IFC_BITO | \
-					  I2C_IFC_CLTO)
+					  I2C_IFC_BITO)
+					  //I2C_IFC_CLTO)
 
 //					  I2C_IFC_RXUF)
 //					  I2C_IFC_TXOF
@@ -186,9 +185,6 @@ void setupI2C(void)
 
   /* Initializing the I2C */
   I2C_Init(I2C1, &i2cInit);
-  
-  /* Setting the status flags and index */
-  i2c_rxInProgress = false;
 
   /* Initializing I2C transfer */
   i2cTransfer.addr          = I2C_ADDRESS;
@@ -221,21 +217,29 @@ void setupI2C(void)
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-void performI2CTransfer(void) {
+static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle
+	// TODO pend queue when implemented
+	while (1) {
+		// Reset Index
+		i2c_txBufferIndex = -1;
 
-	// Reset Index
-	i2c_txBufferIndex = -1;
+		// Load address. TODO format data from queue
+		I2C1->TXDATA = i2cTransfer.addr & 0xFE; // Ensure LSB is Write
 
-	// Load address.
-	I2C1->TXDATA = i2cTransfer.addr & 0xFE; // Ensure LSB is Write
+		// Issue start condition
+		I2C1->CMD |= I2C_CMD_START;
 
-	// Issue start condition
-	I2C1->CMD |= I2C_CMD_START;
+		puts("Command Started");
 
-	// Pend the semaphore. This semaphore is initialized by main and given by the ISR
-	// The reason why the semaphore is here is because the function
-	// will eventually become a task where at the top, we pend a queue.
-	xSemaphoreTake(busySem, portMAX_DELAY);
+		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
+		// The reason why the semaphore is here is because the function
+		// will eventually become a task where at the top, we pend a queue.
+		if (xSemaphoreTake(busySem, 500) == pdTRUE) {
+			puts("Semaphore Taken");
+		}
+
+		else {puts("Semaphore Error");}
+	}
 }
 
 /**************************************************************************//**
@@ -259,15 +263,12 @@ int main(void) {
   /* Setting up i2c */
   setupI2C();
 
-  while (1) {
-	  /* Transmitting data */
-	  performI2CTransfer();
+  xTaskCreate(I2CTransferBegin, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
 
-	  if(i2c_rxInProgress){
-       /* Receiving data */
-    	while(i2c_rxInProgress){;}
-    }
-  }
+  vTaskStartScheduler();
+
+  // Should never get here
+  return 0;
 }
 
 /*
@@ -309,7 +310,7 @@ void I2C1_IRQHandler(void) {
    */
   if (status & I2C_IF_BITO) {
 	  I2C_IntClear(I2C1, I2C_IFC_BITO);
-	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
@@ -346,7 +347,7 @@ void I2C1_IRQHandler(void) {
 
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+			  xSemaphoreGiveFromISR(busySem, txTaskPrio);
 			  if (printfEnable) {puts("NACK Received after data, stop issued");}
 		  }
 
@@ -370,7 +371,7 @@ void I2C1_IRQHandler(void) {
 
 		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+			  xSemaphoreGiveFromISR(busySem, txTaskPrio);
 			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
 		  }
 
@@ -395,7 +396,6 @@ void I2C1_IRQHandler(void) {
 	   * Read the Rx buffer, say we're receiving
 	   */
 	  else if (state == 0x71) {
-		  i2c_rxInProgress = true;
 	      I2C1->RXDATA;
 	      i2c_rxBufferIndex = 0;
 
@@ -426,19 +426,10 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
   }
 
-  /*
-   * Clock Low Timeout
-   */
-  else if (status & I2C_IF_CLTO) {
-	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
-	  I2C1->CMD |= I2C_CMD_ABORT;
-	  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
-	  if (printfEnable) {puts("CLTO Timeout");}
-  }
-
   else if (status & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
-	  I2C_IntClear(I2C1, I2C_IEN_ARBLOST);
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
 	  if (printfEnable) {puts("Arbitration Lost");}
   }
 
@@ -447,7 +438,7 @@ void I2C1_IRQHandler(void) {
 
 	  if (addNewByteToTxBuffer()) {
 		  I2C1->CMD |= I2C_CMD_STOP;
-		  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+		  xSemaphoreGiveFromISR(busySem, txTaskPrio);
 		  if (printfEnable) {puts("TXC Add New Byte has reached end of line");}
 	  }
 
@@ -461,7 +452,7 @@ void I2C1_IRQHandler(void) {
 	  if (status & I2C_IF_TXBL) {
 		  if (addNewByteToTxBuffer()) {
 			  I2C1->CMD |= I2C_CMD_STOP;
-			  xSemaphoreGive(busySem); // TODO change to "fromISR" when tasks included.
+			  xSemaphoreGiveFromISR(busySem, txTaskPrio);
 			  if (printfEnable) {puts("(N)ACK add new byte returned true");}
 		  }
 
@@ -480,8 +471,6 @@ void I2C1_IRQHandler(void) {
   	   * Assume auto-address matching
   	   * Reception has started
   	   */
-
-  	  i2c_rxInProgress = true;
   	  I2C1->RXDATA;
 
   	  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IF_RSTART);
@@ -490,7 +479,6 @@ void I2C1_IRQHandler(void) {
   else if (status & I2C_IF_ADDR) {
       /* Address Match */
       /* Indicating that reception is started */
-	  i2c_rxInProgress = true;
       I2C1->RXDATA;
       i2c_rxBufferIndex = 0; // Reset Index
 
@@ -507,8 +495,17 @@ void I2C1_IRQHandler(void) {
   else if (status & I2C_IF_SSTOP) {
       /* Stop received, reception is ended */
       I2C_IntClear(I2C1, I2C_IFC_SSTOP);
-      i2c_rxInProgress = false;
       if (printfEnable) {puts("Stop condition detected");}
       printf("%s\n", i2c_rxBuffer);
+  }
+
+  /*
+   * Clock Low Timeout
+   */
+  else if (status & I2C_IF_CLTO) {
+	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  if (printfEnable) {puts("CLTO Timeout");}
   }
 }
