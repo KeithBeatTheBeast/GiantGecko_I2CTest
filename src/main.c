@@ -117,12 +117,13 @@ static SemaphoreHandle_t busySem;
 					  I2C_IFC_ACK | \
 					  I2C_IFC_MSTOP | \
 					  I2C_IFC_TXC | \
-					  I2C_IFC_BITO)
-					  //I2C_IFC_CLTO)
+					  I2C_IFC_BITO | \
+					  I2C_IFC_CLTO)
 
 // 					  I2C_IFC_BUSERR
 //					  I2C_IFC_RXUF)
 //					  I2C_IFC_TXOF
+
 //					  I2C_IFC_START
 
 // Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
@@ -327,7 +328,7 @@ void I2C1_IRQHandler(void) {
    * Assumes bus is idle, and master operations can begin.
    */
   if (status & I2C_IF_BITO) {
-	  I2C_IntClear(I2C1, I2C_IFC_BITO);
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("BITO Timeout");}
   }
@@ -353,6 +354,16 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
+  }
+
+  /*
+   * Clock Low Timeout
+   */
+  else if (status & I2C_IF_CLTO) {
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
+	  if (printfEnable) {puts("CLTO Timeout");}
   }
 
   /*
@@ -482,15 +493,5 @@ void I2C1_IRQHandler(void) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
-  }
-
-  /*
-   * Clock Low Timeout
-   */
-  else if (status & I2C_IF_CLTO) {
-	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
-	  I2C1->CMD |= I2C_CMD_ABORT;
-	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
-	  if (printfEnable) {puts("CLTO Timeout");}
   }
 }
