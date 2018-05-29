@@ -217,9 +217,10 @@ void setupI2C(void)
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle
-	// TODO pend queue when implemented
+static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle and semaphore handle
 	while (1) {
+
+		// TODO pend queue
 		// Reset Index
 		i2c_txBufferIndex = -1;
 
@@ -229,19 +230,40 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
 
-		puts("Command Started");
-
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, 1000) == pdTRUE) {
+		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
 			puts("Semaphore Taken");
 		}
 
 		else {puts("Semaphore Error");}
+
+		puts("After Semaphore");
 	}
 }
 
+//static void dumbTx(void *queueHandle) {
+//	while (1) {
+//		if (xSemaphoreGiveFromISR(busySem, 2) == pdTRUE) {
+//			puts("Semaphore Given");
+//		}
+//
+//		else {puts("Semaphore Give Error");}
+//
+//		vTaskDelay(portTICK_PERIOD_MS * 20);
+//	}
+//}
+//
+//static void dumbRx(void *queueHandle) {
+//	while (1) {
+//		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 25) == pdTRUE) {
+//			puts("Semaphore Taken");
+//		}
+//
+//		else {puts("Semaphore Error");}
+//	}
+//}
 /**************************************************************************//**
  * @brief  Main function
  * Main is called from __iar_program_start, see assembly startup file
@@ -264,7 +286,8 @@ int main(void) {
   setupI2C();
 
   xTaskCreate(I2CTransferBegin, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
-
+  //xTaskCreate(dumbTx, (const char *) "DumbyTx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+  //xTaskCreate(dumbRx, (const char *) "DumbyRx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
   vTaskStartScheduler();
 
   // Should never get here
@@ -294,13 +317,13 @@ static inline bool addNewByteToTxBuffer() {
 	return false;
 }
 
-static inline bool checkBusHoldStates(int status){
-	return ((status & 0x97) | \
-			(status & 0x9F) | \
-			(status & 0xD7) | \
-			(status & 0xDF) | \
-			(status & 0x71) | \
-			(status & 0xB1));
+static inline bool checkBusHoldStates(int state){
+	return ((state & 0x97) | \
+			(state & 0x9F) | \
+			(state & 0xD7) | \
+			(state & 0xDF) | \
+			(state & 0x71) | \
+			(state & 0xB1));
 }
 
 /**************************************************************************//**
@@ -323,12 +346,32 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
+  else if (status & I2C_IF_ARBLOST) {
+	  // TODO handle ARBLOST better in the future
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
+	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  if (printfEnable) {puts("Arbitration Lost");}
+  }
+
   /*
-   * BUSHOLD interrupt flag set
-   * For some reason, it seems necessary to do these twice.
-   * Probably unlikely.
+   * Master has transmitted stop condition
+   * Transmission is officially over
+   * Report success to upper layer
+   * Release semaphore
    */
-  else if (checkBusHoldStates(status)) {
+  else if (status & I2C_IF_MSTOP) {
+	  I2C_IntClear(I2C1, I2C_IFC_MSTOP);
+	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  if (printfEnable) {puts("Master Stop Detected");}
+  }
+
+  /*
+   * Conditions that may, but are not guaranteed to, cause a BUSHOLD condition
+   * Usually normal operating conditions but take too long
+   * Tx/Rx transfer stuff
+   */
+  else if (checkBusHoldStates(state) || (status & I2C_IF_BUSHOLD)) {
 
 	  if (printfEnable & (status & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
@@ -352,19 +395,17 @@ void I2C1_IRQHandler(void) {
 	   * TODO completed version should cut contact (stop) and send error message to upper layer
 	   * Can likely be done by using the CTRL_AUTOSN flag and handling in ISR.
 	   */
-	  if (state == 0xdf || state == 0x9f) {
+	  if (state == 0xDF || state == 0x9F) {
 
-		  if (addNewByteToTxBuffer()) {
-			  I2C1->CMD |= I2C_CMD_STOP;
-			  //xSemaphoreGiveFromISR(busySem, txTaskPrio);
+		  if (addNewByteToTxBuffer()) { // Function returns true when there is no more data
+			  I2C1->CMD |= I2C_CMD_STOP; // Send the stop condition
 			  if (printfEnable) {puts("NACK Received after data, stop issued");}
 		  }
 
 		  else {
-			  I2C1->CMD |= I2C_CMD_CONT;
-			 if (printfEnable) {puts("NACK Received after data, no stop issued");}
+			  I2C1->CMD |= I2C_CMD_CONT; // More data, so continue, for now
+			  if (printfEnable) {puts("NACK Received after data, no stop issued");}
 		  }
-
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 	  }
 
@@ -376,18 +417,16 @@ void I2C1_IRQHandler(void) {
 	   * Since it's an ACK, we send another byte, unless at the end of message
 	   * Then we'll send a stop condition
 	   */
-	  else if (state == 0xd7 || state == 0x97) {
+	  else if (state == 0xD7 || state == 0x97) {
 
 		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
-			  I2C1->CMD |= I2C_CMD_STOP;
-			  //xSemaphoreGiveFromISR(busySem, txTaskPrio);
+			  I2C1->CMD |= I2C_CMD_STOP; // So send a stop
 			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
 		  }
 
 		  else {
 			  if (printfEnable) {puts("ACK Received after data, no stop issued");}
 		  }
-
 		  I2C_IntClear(I2C1, I2C_IFC_ACK);
 	  }
 
@@ -401,8 +440,9 @@ void I2C1_IRQHandler(void) {
 	   * Slave Receiver:
 	   * Start Condition on the line has been detected
 	   * Automatic Address Matching has determined a Master is trying to talk to this device
+	   * 0x71 is the state
 	   * Basically the same code from Silicon Labs
-	   * Read the Rx buffer, say we're receiving
+	   * Read the Rx buffer, reset Rx buffer index
 	   */
 	  else if (state == 0x71) {
 	      I2C1->RXDATA;
@@ -414,7 +454,7 @@ void I2C1_IRQHandler(void) {
 
 	  /*
 	   * Slave Receiver:
-	   * The Master has sent data
+	   * The Master has sent data (0xB1)
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
@@ -437,7 +477,7 @@ void I2C1_IRQHandler(void) {
    */
   else if (status & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
-	  if (i2c_rxBufferIndex != 0) {
+	  if (i2c_rxBufferIndex != 0) { // TODO make index checking more rigorous
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP);
@@ -449,28 +489,10 @@ void I2C1_IRQHandler(void) {
    */
   else if (status & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
-	  if (i2c_rxBufferIndex != 0) {
+	  if (i2c_rxBufferIndex != 0) { // TODO make index checking more rigorous
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
-  }
-
-  else if (status & I2C_IF_ARBLOST) {
-	  // TODO handle ARBLOST better in the future
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
-	  if (printfEnable) {puts("Arbitration Lost");}
-  }
-
-  /*
-   * Master has transmitted stop condition
-   * Transmission is officially over
-   * Report success to upper layer
-   * Release semaphore
-   */
-  else if (status & I2C_IF_MSTOP) {
-	  I2C_IntClear(I2C1, I2C_IFC_MSTOP);
-	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
   }
 
   /*
