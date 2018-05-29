@@ -135,8 +135,8 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_NACK | \
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
-					  I2C_IEN_TXC | \
 					  I2C_IEN_BITO)
+//					  I2C_IEN_TXC
 					  //I2C_IEN_CLTO)
 //					  I2C_IEN_MSTOP
 // 					  I2C_IEN_BUSERR
@@ -233,12 +233,13 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
-			puts("Semaphore Taken");
-		}
+		//if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
+			//puts("Semaphore Taken");
+		//}
 
-		else {puts("Semaphore Error");}
+		//else {puts("Semaphore Error");}
 
+		vTaskDelay(portTICK_PERIOD_MS * 20);
 		puts("After Semaphore");
 	}
 }
@@ -342,7 +343,7 @@ void I2C1_IRQHandler(void) {
    */
   if (status & I2C_IF_BITO) {
 	  I2C_IntClear(I2C1, I2C_IFC_BITO);
-	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
@@ -350,7 +351,7 @@ void I2C1_IRQHandler(void) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
-	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("Arbitration Lost");}
   }
 
@@ -362,7 +363,7 @@ void I2C1_IRQHandler(void) {
    */
   else if (status & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, I2C_IFC_MSTOP);
-	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
   }
 
@@ -500,8 +501,8 @@ void I2C1_IRQHandler(void) {
    */
   else if (status & I2C_IF_CLTO) {
 	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
-	  I2C1->CMD |= I2C_CMD_ABORT;
-	  xSemaphoreGiveFromISR(busySem, txTaskPrio);
+	  //I2C1->CMD |= I2C_CMD_ABORT;
+	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("CLTO Timeout");}
   }
 }
