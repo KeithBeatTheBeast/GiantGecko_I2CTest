@@ -136,9 +136,9 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_NACK | \
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
-					  I2C_IEN_BITO)
+					  I2C_IEN_BITO | \
+					  I2C_IEN_CLTO)
 //					  I2C_IEN_TXC
-					  //I2C_IEN_CLTO)
 //					  I2C_IEN_MSTOP
 // 					  I2C_IEN_BUSERR
 //					  I2C_IEN_RXUF)
@@ -357,16 +357,6 @@ void I2C1_IRQHandler(void) {
   }
 
   /*
-   * Clock Low Timeout
-   */
-  else if (status & I2C_IF_CLTO) {
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  I2C1->CMD |= I2C_CMD_ABORT;
-	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
-	  if (printfEnable) {puts("CLTO Timeout");}
-  }
-
-  /*
    * Conditions that may, but are not guaranteed to, cause a BUSHOLD condition
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
@@ -493,5 +483,15 @@ void I2C1_IRQHandler(void) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
+  }
+
+  /*
+   * Clock Low Timeout
+   */
+  else if (status & I2C_IF_CLTO) {
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
+	  if (printfEnable) {puts("CLTO Timeout");}
   }
 }
