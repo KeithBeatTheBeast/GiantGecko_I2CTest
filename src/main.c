@@ -118,7 +118,8 @@ static SemaphoreHandle_t busySem;
 					  I2C_IFC_MSTOP | \
 					  I2C_IFC_TXC | \
 					  I2C_IFC_BITO | \
-					  I2C_IFC_CLTO)
+					  I2C_IFC_CLTO | \
+					  I2C_IFC_START)
 
 // 					  I2C_IFC_BUSERR
 //					  I2C_IFC_RXUF)
@@ -198,9 +199,10 @@ void setupI2C(void)
   I2C1->SADDR = I2C_ADDRESS;
   I2C1->CTRL |= I2C_CTRL_SLAVE | \
 		  I2C_CTRL_AUTOACK | \
-		  I2C_CTRL_BITO_160PCC | \
+		  I2C_CTRL_AUTOSN;
+//		  I2C_CTRL_BITO_160PCC | \
 		  I2C_CTRL_GIBITO | \
-		  I2C_CTRL_CLTO_1024PPC | I2C_CTRL_AUTOSN; //TODO this sends STOP when NACK received
+//		  ;
 
   // Enable interrupts
   I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -318,7 +320,7 @@ static inline bool checkBusHoldStates(int state){
  *****************************************************************************/
 void I2C1_IRQHandler(void) {
    
-  int status = I2C1->IF;
+  int flags = I2C1->IF;
   int state = I2C1->STATE;
 
   /*
@@ -326,7 +328,7 @@ void I2C1_IRQHandler(void) {
    * Goes off when SCL has been high for a period specified in I2C_CTRL
    * Assumes bus is idle, and master operations can begin.
    */
-  if (status & I2C_IF_BITO) {
+  if (flags & I2C_IF_BITO) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("BITO Timeout");}
@@ -335,7 +337,7 @@ void I2C1_IRQHandler(void) {
   /*
    * Arbitration lost
    */
-  else if (status & I2C_IF_ARBLOST) {
+  else if (flags & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
@@ -349,7 +351,7 @@ void I2C1_IRQHandler(void) {
    * Report success to upper layer
    * Release semaphore
    */
-  else if (status & I2C_IF_MSTOP) {
+  else if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
@@ -360,9 +362,9 @@ void I2C1_IRQHandler(void) {
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
    */
-  else if (checkBusHoldStates(state) || (status & I2C_IF_BUSHOLD)) {
+  else if (checkBusHoldStates(state) || (flags & I2C_IF_BUSHOLD)) {
 
-	  if (printfEnable & (status & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
+	  if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
 	  /*
 	   * Master Transmitter BUSHOLD Conditionals
@@ -379,23 +381,11 @@ void I2C1_IRQHandler(void) {
 	   * ADDR+W (0x9F) or
 	   * DATA (0xDF)
 	   * has been sent and a NACK has been received
-	   * For testing purposes, send another byte, if available.
-	   * Trigger a stop if not
 	   * TODO completed version should cut contact (stop) and send error message to upper layer
-	   * Can likely be done by using the CTRL_AUTOSN flag and handling in ISR.
+	   * I2C_CTRL_AUTOSN sends STOP, we'll need to implement message to upper layer
 	   */
 	  if (state == 0xDF || state == 0x9F) {
-
-//		  if (addNewByteToTxBuffer()) { // Function returns true when there is no more data
-//			  I2C1->CMD |= I2C_CMD_STOP; // Send the stop condition
-//			  if (printfEnable) {puts("NACK Received after data, stop issued");}
-//		  }
-//
-//		  else {
-//			  I2C1->CMD |= I2C_CMD_CONT; // More data, so continue, for now
-//			  if (printfEnable) {puts("NACK Received after data, no stop issued");}
-//		  }
-		  I2C_IntClear(I2C1, I2C_IFC_NACK);
+		  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  }
 
 	  /*
@@ -453,9 +443,21 @@ void I2C1_IRQHandler(void) {
 	      if (printfEnable) {puts("Data received");}
 	  }
 
-	  if (status & I2C_IF_BUSHOLD) {
+	  if (flags & I2C_IF_BUSHOLD) {
 		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
 	  }
+  }
+
+  /*
+   * Address Match but not catching on the BUSHOLD subconditional
+   * Read from RXDATAV, if necessary, and clear flag.
+   */
+  else if (flags & I2C_IF_ADDR) {
+      I2C1->RXDATA;
+      i2c_rxBufferIndex = 0;
+
+      I2C_IntClear(I2C1, I2C_IFC_ADDR);
+      if (printfEnable) {puts("Address match outside of BUSHOLD subconditionals");}
   }
 
   /*
@@ -464,19 +466,19 @@ void I2C1_IRQHandler(void) {
    * CHECK and see if we were spoken to
    * By looking at the index of the Rx buffer
    */
-  else if (status & I2C_IF_SSTOP) {
+  else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != 0) { // TODO make index checking more rigorous
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
 	  }
-      I2C_IntClear(I2C1, I2C_IFC_SSTOP);
+      I2C_IntClear(I2C1, i2c_IFC_flags);
   }
 
   /*
    * Repeated Start - This is also a valid way to end transmission
    * Do the same as SSTOP
    */
-  else if (status & I2C_IF_RSTART) {
+  else if (flags & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) { // TODO make index checking more rigorous
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
@@ -487,8 +489,9 @@ void I2C1_IRQHandler(void) {
   /*
    * Clock Low Timeout
    */
-  else if (status & I2C_IF_CLTO) {
+  else if (flags & I2C_IF_CLTO) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
 	  I2C1->CMD |= I2C_CMD_ABORT;
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("CLTO Timeout");}
