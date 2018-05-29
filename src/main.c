@@ -139,7 +139,6 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_BITO | \
 					  I2C_IEN_CLTO)
 //					  I2C_IEN_TXC
-//					  I2C_IEN_MSTOP
 // 					  I2C_IEN_BUSERR
 //					  I2C_IEN_RXUF)
 //					  I2C_IEN_TXOF
@@ -201,7 +200,7 @@ void setupI2C(void)
 		  I2C_CTRL_AUTOACK | \
 		  I2C_CTRL_BITO_160PCC | \
 		  I2C_CTRL_GIBITO | \
-		  I2C_CTRL_CLTO_1024PPC; // | I2C_CTRL_AUTOSN | I2C_CTRL_AUTOSE; //TODO this sends STOP when NACK received
+		  I2C_CTRL_CLTO_1024PPC | I2C_CTRL_AUTOSN; //TODO this sends STOP when NACK received
 
   // Enable interrupts
   I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -387,15 +386,15 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if (state == 0xDF || state == 0x9F) {
 
-		  if (addNewByteToTxBuffer()) { // Function returns true when there is no more data
-			  I2C1->CMD |= I2C_CMD_STOP; // Send the stop condition
-			  if (printfEnable) {puts("NACK Received after data, stop issued");}
-		  }
-
-		  else {
-			  I2C1->CMD |= I2C_CMD_CONT; // More data, so continue, for now
-			  if (printfEnable) {puts("NACK Received after data, no stop issued");}
-		  }
+//		  if (addNewByteToTxBuffer()) { // Function returns true when there is no more data
+//			  I2C1->CMD |= I2C_CMD_STOP; // Send the stop condition
+//			  if (printfEnable) {puts("NACK Received after data, stop issued");}
+//		  }
+//
+//		  else {
+//			  I2C1->CMD |= I2C_CMD_CONT; // More data, so continue, for now
+//			  if (printfEnable) {puts("NACK Received after data, no stop issued");}
+//		  }
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 	  }
 
