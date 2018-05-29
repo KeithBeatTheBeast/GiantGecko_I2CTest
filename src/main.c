@@ -239,32 +239,11 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
 
 		//else {puts("Semaphore Error");}
 
+		// TODO replace with semaphore when Brendan helps with NVIC priorities
 		vTaskDelay(portTICK_PERIOD_MS * 20);
-		puts("After Semaphore");
 	}
 }
 
-//static void dumbTx(void *queueHandle) {
-//	while (1) {
-//		if (xSemaphoreGiveFromISR(busySem, 2) == pdTRUE) {
-//			puts("Semaphore Given");
-//		}
-//
-//		else {puts("Semaphore Give Error");}
-//
-//		vTaskDelay(portTICK_PERIOD_MS * 20);
-//	}
-//}
-//
-//static void dumbRx(void *queueHandle) {
-//	while (1) {
-//		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 25) == pdTRUE) {
-//			puts("Semaphore Taken");
-//		}
-//
-//		else {puts("Semaphore Error");}
-//	}
-//}
 /**************************************************************************//**
  * @brief  Main function
  * Main is called from __iar_program_start, see assembly startup file
@@ -280,15 +259,17 @@ int main(void) {
   SWO_SetupForPrint();
 
   // Create the semaphore and report on it.
-  busySem = xSemaphoreCreateBinary();
+  busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initalizer
   if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
   else { puts("Creation of Busy Semaphore Successful!");}
+
   /* Setting up i2c */
   setupI2C();
 
+  // Create Tx task
   xTaskCreate(I2CTransferBegin, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
-  //xTaskCreate(dumbTx, (const char *) "DumbyTx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-  //xTaskCreate(dumbRx, (const char *) "DumbyRx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
+  // Start Scheduler TODO externalize to another API
   vTaskStartScheduler();
 
   // Should never get here
@@ -318,6 +299,10 @@ static inline bool addNewByteToTxBuffer() {
 	return false;
 }
 
+/*
+ * @brief Checks conditions that the BUSHOLD if-else looks for
+ * These are the states in the I2C State register that will enter there.
+ */
 static inline bool checkBusHoldStates(int state){
 	return ((state & 0x97) | \
 			(state & 0x9F) | \
@@ -347,6 +332,9 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
+  /*
+   * Arbitration lost
+   */
   else if (status & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -362,7 +350,7 @@ void I2C1_IRQHandler(void) {
    * Release semaphore
    */
   else if (status & I2C_IF_MSTOP) {
-	  I2C_IntClear(I2C1, I2C_IFC_MSTOP);
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
   }
@@ -501,7 +489,7 @@ void I2C1_IRQHandler(void) {
    */
   else if (status & I2C_IF_CLTO) {
 	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
-	  //I2C1->CMD |= I2C_CMD_ABORT;
+	  I2C1->CMD |= I2C_CMD_ABORT;
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("CLTO Timeout");}
   }
