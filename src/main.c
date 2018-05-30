@@ -87,7 +87,6 @@
 
 // Buffers++
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
-uint8_t i2c_txBufferSize = sizeof(i2c_txBuffer) - 2; // Only 18 chars in the above message I want to send.
 uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE * 2];
 int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 
@@ -190,7 +189,7 @@ void setupI2C(void) {
   i2cTransfer.buf[0].data   = i2c_txBuffer;
   i2cTransfer.buf[0].len    = sizeof(i2c_txBuffer);
   i2cTransfer.buf[1].data   = i2c_rxBuffer;
-  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
+  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE * 2;
 
   /* Setting up to enable slave mode */
   I2C1->SADDR = I2C_ADDRESS;
@@ -289,7 +288,7 @@ int main(void) {
  */
 static inline bool addNewByteToTxBuffer() {
 
-	if (++i2c_txBufferIndex >= i2cTransfer.buf[0].len - 1) {
+	if (++i2c_txBufferIndex >= i2cTransfer.buf[0].len - 1) { // TODO Macro the 2
 		return true;
 	}
 
