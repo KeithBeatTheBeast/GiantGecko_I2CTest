@@ -130,28 +130,6 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_BUSERR)
 
 /**************************************************************************//**
- * @brief  Starting oscillators and enabling clocks
- *****************************************************************************/
-void setupOscillators(void)
-{
-  /* Enabling clock to the I2C, GPIO, LE */
-  CMU_ClockEnable(cmuClock_I2C1, true);
-
-  CMU_ClockEnable(cmuClock_GPIO, true);
-  CMU_ClockEnable(cmuClock_CORELE, true);
-  
-  // Enabling USART0 (see errata)
-  CMU_ClockEnable(cmuClock_USART0, true);
-  
-  /* Starting LFXO and waiting until it is stable */
-  CMU_OscillatorEnable(cmuOsc_LFXO, true, true);
-
-  /* Routing the LFXO clock to the RTC */
-  CMU_ClockSelectSet(cmuClock_LFA,cmuSelect_LFXO);
-  CMU_ClockEnable(cmuClock_RTC, true);
-}
-
-/**************************************************************************//**
  * @brief  Setup I2C
  *****************************************************************************/
 void setupI2C(void) {
@@ -238,28 +216,28 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
  *****************************************************************************/
 int main(void) {
 
-  /* Configuring clocks in the Clock Management Unit (CMU) */
-  setupOscillators();
+	/* Enabling clock to the I2C*/
+	CMU_ClockEnable(cmuClock_I2C1, true);
   
-  // Use this to enable printfs.
-  SWO_SetupForPrint();
+	// Use this to enable printfs.
+	SWO_SetupForPrint();
 
-  // Create the semaphore and report on it.
-  busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initalizer
-  if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
-  else { puts("Creation of Busy Semaphore Successful!");}
+	// Create the semaphore and report on it.
+	busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initalizer
+	if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
+	else { puts("Creation of Busy Semaphore Successful!");}
 
-  /* Setting up i2c */
-  setupI2C();
+	/* Setting up i2c */
+	setupI2C();
 
-  // Create Tx task
-  xTaskCreate(I2CTransferBegin, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
+	// Create Tx task
+	xTaskCreate(I2CTransferBegin, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
 
-  // Start Scheduler TODO externalize to another API
-  vTaskStartScheduler();
+	// Start Scheduler TODO externalize to another API
+	vTaskStartScheduler();
 
-  // Should never get here
-  return 0;
+	// Should never get here
+	return 0;
 }
 
 /*
