@@ -64,12 +64,9 @@
  ******************************************************************************/
 
 #include <stdbool.h>
-#include "em_device.h"
 #include "em_chip.h"
 #include "em_i2c.h"
-#include "em_rtc.h"
 #include "em_cmu.h"
-#include "em_emu.h"
 #include "em_gpio.h"
 
 // FreeRTOS includes
@@ -170,12 +167,11 @@ void setupOscillators(void)
 /**************************************************************************//**
  * @brief  Setup I2C
  *****************************************************************************/
-void setupI2C(void)
-{
+void setupI2C(void) {
   // Using default settings
   I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
 
-  /* Using PD6 (SDA) and PD7 (SCL) */
+  /* Using PC4 (SDA) and PC5 (SCL) */
   GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
   GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
 
@@ -200,8 +196,8 @@ void setupI2C(void)
   I2C1->CTRL |= I2C_CTRL_SLAVE | \
 		  I2C_CTRL_AUTOACK | \
 		  I2C_CTRL_AUTOSN;
-//		  I2C_CTRL_BITO_160PCC | \
-		  I2C_CTRL_GIBITO | \
+//		  I2C_CTRL_BITO_160PCC |
+//		  I2C_CTRL_GIBITO |
 //		  ;
 
   // Enable interrupts
