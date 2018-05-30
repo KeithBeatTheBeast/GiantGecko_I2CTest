@@ -63,6 +63,7 @@
  *
  ******************************************************************************/
 
+// Includes for starting the chip, i2c, oscillators and gpio pins
 #include <stdbool.h>
 #include "em_chip.h"
 #include "em_i2c.h"
@@ -313,6 +314,12 @@ static inline bool checkBusHoldStates(int state){
 			(state & 0xB1));
 }
 
+void clearRxBuffer() {
+	for (int i = 0; i < i2c_rxBufferIndex; i++) {
+		i2c_rxBuffer[i] = " ";
+	}
+}
+
 /**************************************************************************//**
  * @brief I2C Interrupt Handler.
  *        The interrupt table is in assembly startup file startup_efm32.s
@@ -469,6 +476,7 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+		  clearRxBuffer(); // TODO temp function
 		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -482,6 +490,7 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+		  clearRxBuffer(); // TODO temp function
 		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
