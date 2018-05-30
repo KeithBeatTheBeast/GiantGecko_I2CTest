@@ -80,14 +80,13 @@
 #include "makePrintfWork.h"
 
 /* Defines*/
-#define CORE_FREQUENCY              14000000
-#define RTC_MIN_TIMEOUT                32000 
 #define I2C_ADDRESS                     0xE2
-#define I2C_RXBUFFER_SIZE                 10
+#define I2C_RXBUFFER_SIZE               128
+#define txTaskPrio						2
 
 // Buffers++
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
-uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE * 2];
+uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
 int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
@@ -95,8 +94,6 @@ bool printfEnable = false;
 
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
-
-#define txTaskPrio							2
 
 static SemaphoreHandle_t busySem;
 
@@ -116,13 +113,8 @@ static SemaphoreHandle_t busySem;
 					  I2C_IFC_TXC | \
 					  I2C_IFC_BITO | \
 					  I2C_IFC_CLTO | \
-					  I2C_IFC_START)
-
-// 					  I2C_IFC_BUSERR
-//					  I2C_IFC_RXUF)
-//					  I2C_IFC_TXOF
-
-//					  I2C_IFC_START
+					  I2C_IFC_START | \
+					  I2C_IFC_BUSERR)
 
 // Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
 #define i2c_IEN_flags (I2C_IEN_ADDR | \
@@ -135,12 +127,8 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_BITO | \
-					  I2C_IEN_CLTO)
-//					  I2C_IEN_TXC
-// 					  I2C_IEN_BUSERR
-//					  I2C_IEN_RXUF)
-//					  I2C_IEN_TXOF
-//					  I2C_IEN_START
+					  I2C_IEN_CLTO | \
+					  I2C_IEN_BUSERR)
 
 /**************************************************************************//**
  * @brief  Starting oscillators and enabling clocks
@@ -189,7 +177,7 @@ void setupI2C(void) {
   i2cTransfer.buf[0].data   = i2c_txBuffer;
   i2cTransfer.buf[0].len    = sizeof(i2c_txBuffer);
   i2cTransfer.buf[1].data   = i2c_rxBuffer;
-  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE * 2;
+  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
 
   /* Setting up to enable slave mode */
   I2C1->SADDR = I2C_ADDRESS;
@@ -313,12 +301,6 @@ static inline bool checkBusHoldStates(int state){
 			(state & 0xB1));
 }
 
-void clearRxBuffer() {
-	for (int i = 0; i < i2c_rxBufferIndex; i++) {
-		i2c_rxBuffer[i] = " ";
-	}
-}
-
 /**************************************************************************//**
  * @brief I2C Interrupt Handler.
  *        The interrupt table is in assembly startup file startup_efm32.s
@@ -344,13 +326,13 @@ void I2C1_IRQHandler(void) {
   /*
    * Arbitration lost
    */
-  else if (flags & I2C_IF_ARBLOST) {
+  else if ((flags & I2C_IF_ARBLOST) | (flags & I2C_IF_BUSERR)) {
 	  // TODO handle ARBLOST better in the future
 	  i2c_rxBufferIndex = 0;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
-	  if (printfEnable) {puts("Arbitration Lost");}
+	  if (printfEnable) {puts("Arbitration Lost/Bus Error");}
   }
 
   /*
@@ -475,7 +457,6 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
-		  clearRxBuffer(); // TODO temp function
 		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -489,7 +470,6 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
-		  clearRxBuffer(); // TODO temp function
 		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
