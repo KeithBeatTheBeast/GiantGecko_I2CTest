@@ -91,7 +91,7 @@ uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE * 2];
 int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
-bool printfEnable = true;
+bool printfEnable = false;
 
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
@@ -288,7 +288,7 @@ int main(void) {
  */
 static inline bool addNewByteToTxBuffer() {
 
-	if (++i2c_txBufferIndex >= i2cTransfer.buf[0].len - 1) { // TODO Macro the 2
+	if (++i2c_txBufferIndex > i2cTransfer.buf[0].len - 1) { // TODO Macro the 2
 		return true;
 	}
 
