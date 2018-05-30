@@ -200,13 +200,16 @@ void setupI2C(void) {
 //		  I2C_CTRL_GIBITO |
 //		  ;
 
+  // Set Rx index to zero.
+  i2c_rxBufferIndex = 0;
+
   // Enable interrupts
   I2C_IntClear(I2C1, i2c_IFC_flags);
   I2C_IntEnable(I2C1, i2c_IEN_flags);
   NVIC_EnableIRQ(I2C1_IRQn);
 
   // We're starting/restarting the board, so it assume the bus is busy
-  // We need to either have a clock-high timeout, or issue an abort
+  // We need to either have a clock-high (BITO) timeout, or issue an abort
   if (I2C1->STATE & I2C_STATE_BUSY) {
 	  I2C1->CMD = I2C_CMD_ABORT;
   }
@@ -323,8 +326,10 @@ void I2C1_IRQHandler(void) {
    * BITO - Bus Idle Timeout
    * Goes off when SCL has been high for a period specified in I2C_CTRL
    * Assumes bus is idle, and master operations can begin.
+   * Reset Rx index
    */
   if (flags & I2C_IF_BITO) {
+	  i2c_rxBufferIndex = 0;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("BITO Timeout");}
@@ -335,6 +340,7 @@ void I2C1_IRQHandler(void) {
    */
   else if (flags & I2C_IF_ARBLOST) {
 	  // TODO handle ARBLOST better in the future
+	  i2c_rxBufferIndex = 0;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
@@ -417,11 +423,10 @@ void I2C1_IRQHandler(void) {
 	   * Automatic Address Matching has determined a Master is trying to talk to this device
 	   * 0x71 is the state
 	   * Basically the same code from Silicon Labs
-	   * Read the Rx buffer, reset Rx buffer index
+	   * Read the Rx buffer
 	   */
 	  else if (state == 0x71) {
 	      I2C1->RXDATA;
-	      i2c_rxBufferIndex = 0;
 
 	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
@@ -450,8 +455,6 @@ void I2C1_IRQHandler(void) {
    */
   else if (flags & I2C_IF_ADDR) {
       I2C1->RXDATA;
-      i2c_rxBufferIndex = 0;
-
       I2C_IntClear(I2C1, I2C_IFC_ADDR);
       if (printfEnable) {puts("Address match outside of BUSHOLD subconditionals");}
   }
@@ -464,8 +467,9 @@ void I2C1_IRQHandler(void) {
    */
   else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
-	  if (i2c_rxBufferIndex != 0) { // TODO make index checking more rigorous
+	  if (i2c_rxBufferIndex != 0) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, i2c_IFC_flags);
   }
@@ -476,8 +480,9 @@ void I2C1_IRQHandler(void) {
    */
   else if (flags & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
-	  if (i2c_rxBufferIndex != 0) { // TODO make index checking more rigorous
+	  if (i2c_rxBufferIndex != 0) {
 		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
   }
@@ -489,6 +494,7 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
 	  I2C1->CMD |= I2C_CMD_ABORT;
+	  i2c_rxBufferIndex = 0;
 	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
 	  if (printfEnable) {puts("CLTO Timeout");}
   }
