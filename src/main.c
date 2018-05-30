@@ -65,7 +65,6 @@
 
 // Includes for starting the chip, i2c, oscillators and gpio pins
 #include <stdbool.h>
-#include "em_chip.h"
 #include "em_i2c.h"
 #include "em_cmu.h"
 #include "em_gpio.h"
@@ -238,9 +237,7 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
  * Main is called from __iar_program_start, see assembly startup file
  *****************************************************************************/
 int main(void) {
-  /* Initialize chip */
-  CHIP_Init();
-  
+
   /* Configuring clocks in the Clock Management Unit (CMU) */
   setupOscillators();
   
