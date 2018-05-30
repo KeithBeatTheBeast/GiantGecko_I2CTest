@@ -96,10 +96,6 @@ static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 
 static SemaphoreHandle_t busySem;
 
-// Temp variables for controlling ISR triggers.
-// Adjust as needed for debugging and driver development
-
-// This should be used as the 2nd argument to I2C_IntClear
 // Different variable as RXDATAV and TXBL do not exist for the EFM32GG's IFC/IFS registers. Set to zero.
 #define i2c_IFC_flags (I2C_IFC_ADDR | \
 					  I2C_IFC_SSTOP | \
