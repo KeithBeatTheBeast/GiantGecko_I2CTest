@@ -162,10 +162,9 @@ void setupI2C(void) {
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOACK | \
-			I2C_CTRL_AUTOSN;
-//		  	I2C_CTRL_BITO_160PCC |
-//		  	I2C_CTRL_GIBITO |
-//		  	;
+			I2C_CTRL_AUTOSN | \
+		  	I2C_CTRL_BITO_160PCC | \
+		  	I2C_CTRL_GIBITO;
 
 	// Set Rx index to zero.
 	i2c_rxBufferIndex = 0;
@@ -202,13 +201,11 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
 		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
-			puts("Semaphore Taken");
+			if (printfEnable) {puts("Semaphore Taken");}
 		}
 
 		else {
-			puts("Semaphore Error"); // TODO send error to upper layer
-			I2C_IntClear(I2C1, i2c_IFC_flags);
-			I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_CLEARPC;
+			if (printfEnable) {puts("Semaphore Timeout");} // TODO send error to upper layer
 			NVIC_DisableIRQ(I2C1_IRQn);
 			NVIC_EnableIRQ(I2C1_IRQn);
 		}
@@ -472,8 +469,9 @@ void I2C1_IRQHandler(void) {
   }
 
   else {
-	  puts("MITCH MCCONNEL'S NUCLEAR OPTION!!!!");
+	  puts("MITCH MCCONNELL'S NUCLEAR OPTION!!!!");
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_CLEARPC;
+	  NVIC_DisableIRQ(I2C1_IRQn);
   }
 }
