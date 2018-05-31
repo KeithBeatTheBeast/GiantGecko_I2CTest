@@ -89,7 +89,7 @@ uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
 int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
-bool printfEnable = false;
+bool printfEnable = true;
 
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
@@ -203,6 +203,7 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
 
 		// TODO replace with semaphore when Brendan helps with NVIC priorities
 		vTaskDelay(portTICK_PERIOD_MS * 20);
+		if (printfEnable) {puts("Tx Looping");}
 	}
 }
 
