@@ -129,51 +129,57 @@ static SemaphoreHandle_t busySem;
  * @brief  Setup I2C
  *****************************************************************************/
 void setupI2C(void) {
-  // Using default settings
-  I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
 
-  /* Using PC4 (SDA) and PC5 (SCL) */
-  GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
-  GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
+	// Changing the priority of I2C1 IRQ.
+	// IT MUST BE LESS THAN (NUMERICALLY GREATER THAN) configMAX_SYSCALL_INTERRUPT_PRIORITY
+	// defined in FreeRTOSConfig.h
+	NVIC_SetPriority(I2C1_IRQn, 6);
 
-  /* Enable pins at location 1 */
-  I2C1->ROUTE = I2C_ROUTE_SDAPEN |
-                I2C_ROUTE_SCLPEN |
-                (0 << _I2C_ROUTE_LOCATION_SHIFT);
+	// Using default settings
+	I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
 
-  /* Initializing the I2C */
-  I2C_Init(I2C1, &i2cInit);
+	/* Using PC4 (SDA) and PC5 (SCL) */
+	GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
+	GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
 
-  /* Initializing I2C transfer */
-  i2cTransfer.addr          = I2C_ADDRESS;
-  i2cTransfer.flags         = I2C_FLAG_WRITE;
-  i2cTransfer.buf[0].data   = i2c_txBuffer;
-  i2cTransfer.buf[0].len    = sizeof(i2c_txBuffer);
-  i2cTransfer.buf[1].data   = i2c_rxBuffer;
-  i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
+	/* Enable pins at location 1 */
+	I2C1->ROUTE = I2C_ROUTE_SDAPEN |
+			I2C_ROUTE_SCLPEN |
+			(0 << _I2C_ROUTE_LOCATION_SHIFT);
 
-  /* Setting up to enable slave mode */
-  I2C1->SADDR = I2C_ADDRESS;
-  I2C1->CTRL |= I2C_CTRL_SLAVE | \
-		  I2C_CTRL_AUTOACK | \
-		  I2C_CTRL_AUTOSN;
-//		  I2C_CTRL_BITO_160PCC |
-//		  I2C_CTRL_GIBITO |
-//		  ;
+	/* Initializing the I2C */
+	I2C_Init(I2C1, &i2cInit);
 
-  // Set Rx index to zero.
-  i2c_rxBufferIndex = 0;
+	/* Initializing I2C transfer */
+	i2cTransfer.addr          = I2C_ADDRESS;
+	i2cTransfer.flags         = I2C_FLAG_WRITE;
+	i2cTransfer.buf[0].data   = i2c_txBuffer;
+	i2cTransfer.buf[0].len    = sizeof(i2c_txBuffer);
+	i2cTransfer.buf[1].data   = i2c_rxBuffer;
+	i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
 
-  // Enable interrupts
-  I2C_IntClear(I2C1, i2c_IFC_flags);
-  I2C_IntEnable(I2C1, i2c_IEN_flags);
-  NVIC_EnableIRQ(I2C1_IRQn);
+	/* Setting up to enable slave mode */
+	I2C1->SADDR = I2C_ADDRESS;
+	I2C1->CTRL |= I2C_CTRL_SLAVE | \
+			I2C_CTRL_AUTOACK | \
+			I2C_CTRL_AUTOSN;
+//		  	I2C_CTRL_BITO_160PCC |
+//		  	I2C_CTRL_GIBITO |
+//		  	;
 
-  // We're starting/restarting the board, so it assume the bus is busy
-  // We need to either have a clock-high (BITO) timeout, or issue an abort
-  if (I2C1->STATE & I2C_STATE_BUSY) {
-	  I2C1->CMD = I2C_CMD_ABORT;
-  }
+	// Set Rx index to zero.
+	i2c_rxBufferIndex = 0;
+
+	// Enable interrupts
+	I2C_IntClear(I2C1, i2c_IFC_flags);
+	I2C_IntEnable(I2C1, i2c_IEN_flags);
+	NVIC_EnableIRQ(I2C1_IRQn);
+
+	// We're starting/restarting the board, so it assume the bus is busy
+	// We need to either have a clock-high (BITO) timeout, or issue an abort
+	if (I2C1->STATE & I2C_STATE_BUSY) {
+		I2C1->CMD = I2C_CMD_ABORT;
+	}
 }
 
 /**************************************************************************//**
