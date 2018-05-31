@@ -83,13 +83,13 @@
 #define I2C_RXBUFFER_SIZE               128
 #define txTaskPrio						2
 
+// Boolean I use for debugging to determine whether or not I want a stream of printfs.
+#define printfEnable					false
+
 // Buffers++
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
 uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
 int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
-
-// Boolean I use for debugging to determine whether or not I want a stream of printfs.
-bool printfEnable = false;
 
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
