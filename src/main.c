@@ -214,7 +214,7 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
 		}
 
 		// TODO replace with semaphore when Brendan helps with NVIC priorities
-		//vTaskDelay(portTICK_PERIOD_MS * 20);
+		vTaskDelay(portTICK_PERIOD_MS * 1);
 		if (printfEnable) {puts("Tx Looping");}
 	}
 }
