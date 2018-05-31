@@ -89,7 +89,7 @@ uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
 int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
-bool printfEnable = true;
+bool printfEnable = false;
 
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
@@ -195,14 +195,20 @@ static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle a
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
-		//if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
-			//puts("Semaphore Taken");
-		//}
+		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
+			puts("Semaphore Taken");
+		}
 
-		//else {puts("Semaphore Error");}
+		else {
+			puts("Semaphore Error"); // TODO send error to upper layer
+			I2C_IntClear(I2C1, i2c_IFC_flags);
+			I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_CLEARPC;
+			NVIC_DisableIRQ(I2C1_IRQn);
+			NVIC_EnableIRQ(I2C1_IRQn);
+		}
 
 		// TODO replace with semaphore when Brendan helps with NVIC priorities
-		vTaskDelay(portTICK_PERIOD_MS * 20);
+		//vTaskDelay(portTICK_PERIOD_MS * 20);
 		if (printfEnable) {puts("Tx Looping");}
 	}
 }
@@ -291,7 +297,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_BITO) {
 	  i2c_rxBufferIndex = 0;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
+	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
@@ -303,7 +309,7 @@ void I2C1_IRQHandler(void) {
 	  i2c_rxBufferIndex = 0;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
-	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
+	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("Arbitration Lost/Bus Error");}
   }
 
@@ -315,7 +321,7 @@ void I2C1_IRQHandler(void) {
    */
   else if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
+	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
   }
 
@@ -455,7 +461,13 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, I2C_IFC_CLTO);
 	  I2C1->CMD |= I2C_CMD_ABORT;
 	  i2c_rxBufferIndex = 0;
-	  //xSemaphoreGiveFromISR(busySem, txTaskPrio); TODO remove comment
+	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("CLTO Timeout");}
+  }
+
+  else {
+	  puts("MITCH MCCONNEL'S NUCLEAR OPTION!!!!");
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_CLEARPC;
   }
 }
