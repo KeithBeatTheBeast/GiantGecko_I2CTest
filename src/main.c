@@ -131,9 +131,11 @@ static SemaphoreHandle_t busySem;
 void setupI2C(void) {
 
 	// Changing the priority of I2C1 IRQ.
-	// IT MUST BE LESS THAN (NUMERICALLY GREATER THAN) configMAX_SYSCALL_INTERRUPT_PRIORITY
+	// It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
 	// defined in FreeRTOSConfig.h
-	NVIC_SetPriority(I2C1_IRQn, 6);
+	// Currently, that is set to 5.
+
+	NVIC_SetPriority(I2C1_IRQn, 5);
 
 	// Using default settings
 	I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
@@ -305,12 +307,12 @@ void I2C1_IRQHandler(void) {
    * Assumes bus is idle, and master operations can begin.
    * Reset Rx index
    */
-//  if (flags & I2C_IF_BITO) {
-//	  i2c_rxBufferIndex = 0;
-//	  I2C_IntClear(I2C1, i2c_IFC_flags);
-//	  xSemaphoreGiveFromISR(busySem, NULL);
-//	  if (printfEnable) {puts("BITO Timeout");}
-//  }
+  if (flags & I2C_IF_BITO) {
+	  i2c_rxBufferIndex = 0;
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  xSemaphoreGiveFromISR(busySem, NULL);
+	  if (printfEnable) {puts("BITO Timeout");}
+  }
 
   /*
    * Arbitration lost
