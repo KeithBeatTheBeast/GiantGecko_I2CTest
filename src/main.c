@@ -81,7 +81,7 @@
 /* Defines*/
 #define I2C_ADDRESS                     0xE2
 #define I2C_RXBUFFER_SIZE               128
-#define txTaskPrio						2
+#define I2C_TaskPriority				2
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
 #define printfEnable					false
@@ -138,7 +138,7 @@ void setupI2C(void) {
 	NVIC_SetPriority(I2C1_IRQn, 5);
 
 	// Using default settings
-	I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
+	I2C_Init_TypeDef i2cInit = {true, true, 0, I2C_FREQ_FASTPLUS_MAX, i2cClockHLRAsymetric};
 
 	/* Using PC4 (SDA) and PC5 (SCL) */
 	GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
@@ -203,7 +203,7 @@ void resetI2C() {
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-static void vI2CTransferTask(void *queueHandle) { // TODO pass in queue handle and semaphore handle
+static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle and semaphore handle
 	while (1) {
 
 		// TODO pend queue
@@ -234,6 +234,13 @@ static void vI2CTransferTask(void *queueHandle) { // TODO pass in queue handle a
 	}
 }
 
+//static void vI2CReceiveTask(void *rxQueueHandle) {
+//
+//	while(1) {
+//
+//	}
+//}
+
 /**************************************************************************//**
  * @brief  Main function
  * Main is called from __iar_program_start, see assembly startup file
@@ -254,8 +261,9 @@ int main(void) {
 	/* Setting up i2c */
 	setupI2C();
 
-	// Create Tx task
-	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
+	// Create I2C Tasks
+	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, I2C_TaskPriority, NULL);
+	//xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TaskPriority, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
