@@ -121,9 +121,9 @@ static SemaphoreHandle_t busySem;
 					  I2C_IEN_NACK | \
 					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
-					  I2C_IEN_BITO | \
 					  I2C_IEN_CLTO | \
-					  I2C_IEN_BUSERR)
+					  I2C_IEN_BUSERR | \
+					  I2C_IEN_BITO)
 
 /**************************************************************************//**
  * @brief  Setup I2C
@@ -164,9 +164,9 @@ void setupI2C(void) {
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOACK | \
-			I2C_CTRL_AUTOSN | \
-		  	I2C_CTRL_BITO_160PCC | \
-		  	I2C_CTRL_GIBITO;
+			I2C_CTRL_AUTOSN;
+		  	//I2C_CTRL_BITO_160PCC | \
+		  	//I2C_CTRL_GIBITO;
 
 	// Set Rx index to zero.
 	i2c_rxBufferIndex = 0;
@@ -190,12 +190,23 @@ void resetI2C() {
 	I2C_IntClear(I2C1, i2c_IFC_flags);
 	I2C1->CMD = I2C_CMD_ABORT;
 	NVIC_EnableIRQ(I2C1_IRQn);
+
+	I2C1->CMD |= I2C_CMD_CLEARTX;
+	I2C1->CMD |= I2C_CMD_START | I2C_CMD_STOP;
+	I2C1->CMD |= I2C_CMD_CLEARPC;
+	I2C1->CMD |= I2C_CMD_ABORT;
+
+	vTaskDelay(portTICK_PERIOD_MS * 1);
+
+	I2C_IntClear(I2C1, i2c_IFC_flags);
+	I2C_IntEnable(I2C1, i2c_IEN_flags);
+	NVIC_EnableIRQ(I2C1_IRQn);
 }
 
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-static void I2CTransferBegin(void *queueHandle) { // TODO pass in queue handle and semaphore handle
+static void vI2CTransferTask(void *queueHandle) { // TODO pass in queue handle and semaphore handle
 	while (1) {
 
 		// TODO pend queue
@@ -247,7 +258,7 @@ int main(void) {
 	setupI2C();
 
 	// Create Tx task
-	xTaskCreate(I2CTransferBegin, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
+	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, txTaskPrio, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -332,7 +343,7 @@ void I2C1_IRQHandler(void) {
    * Report success to upper layer
    * Release semaphore
    */
-  if (flags & I2C_IF_MSTOP) {
+  else if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
@@ -466,27 +477,12 @@ void I2C1_IRQHandler(void) {
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
   }
 
-//  /*
-//   * Clock Low Timeout
-//   */
-//  else if (flags & I2C_IF_CLTO) {
-//	  I2C_IntClear(I2C1, i2c_IFC_flags);
-//	  I2C1->CMD |= I2C_CMD_ABORT;
-//	  i2c_rxBufferIndex = 0;
-//	  xSemaphoreGiveFromISR(busySem, NULL);
-//	  if (printfEnable) {puts("CLTO Timeout");}
-//  }
-//
-//  else {
-//	  puts("MITCH MCCONNELL'S NUCLEAR OPTION!!!!");
-//	  I2C_IntClear(I2C1, i2c_IFC_flags);
-//	  I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_CLEARPC;
-//	  NVIC_DisableIRQ(I2C1_IRQn);
-//  }
-
-  // Put BUSERR, ARBLOST, CLTO, BITO here.
+  // Put BUSERR, ARBLOST, CLTO, here.
+  // Wait for timeout on semaphore
   else {
+	  i2c_rxBufferIndex = 0;
 	  NVIC_DisableIRQ(I2C1_IRQn);
-	  return;
+	  I2C_IntDisable(I2C1, i2c_IEN_flags);
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
   }
 }
