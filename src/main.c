@@ -35,7 +35,7 @@
 /*******************************************************************************
  * Edited by Kgmills on 5/11/18
  *
- * Initial Code for using the I2C Interface for an Silabs EFM32 Giant Gecko board for
+; * Initial Code for using the I2C Interface for an Silabs EFM32 Giant Gecko board for
  * testing purposes. Just sends messages back and forth, capitalizing some characters
  * Simple, but will be used to develop a functional physical layer for our project.
  *
@@ -53,6 +53,9 @@
  *
  * Connected together between two boards. Both of these wires were pulled-up by
  * a 2.7kOhm resistor connected to the 3.3V pin of ONE of the boards.
+ *
+ * 6/1/18: The 2.7kOhm resistors have been exchanged for a pair of 330 Ohm Resistors
+ * This enables the proper usage and testing with Fast+ Mode (1Mbit/s)
  * An oscilloscope was used for initial testing purposes to see if the
  * clock and data lines were being pulled low. These pins were grounded to the
  * GND pins on the same board that provides 3.3V.
@@ -74,13 +77,14 @@
 #include "FreeRTOSConfig.h"
 #include "semphr.h"
 #include "task.h"
+#include "queue.h"
 
 // Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
 #include "makePrintfWork.h"
 
 /* Defines*/
 #define I2C_ADDRESS                     0xE2
-#define I2C_RXBUFFER_SIZE               128
+#define I2C_RXBUFFER_SIZE               256
 #define I2C_TaskPriority				2
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
@@ -94,7 +98,9 @@ int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
 /* Transmission and Receiving Structure */
 static volatile I2C_TransferSeq_TypeDef i2cTransfer;
 
+// FreeRTOS handles
 static SemaphoreHandle_t busySem;
+static QueueHandle_t 	 rxQueue;
 
 // Different variable as RXDATAV and TXBL do not exist for the EFM32GG's IFC/IFS registers. Set to zero.
 #define i2c_IFC_flags (I2C_IFC_ADDR | \
@@ -130,11 +136,12 @@ static SemaphoreHandle_t busySem;
  *****************************************************************************/
 void setupI2C(void) {
 
-	// Changing the priority of I2C1 IRQ.
-	// It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
-	// defined in FreeRTOSConfig.h
-	// Currently, that is set to 5.
-
+	/*
+	* Changing the priority of I2C1 IRQ.
+	* It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
+	* defined in FreeRTOSConfig.h
+	* Currently, that is set to 5.
+	*/
 	NVIC_SetPriority(I2C1_IRQn, 5);
 
 	// Using default settings
@@ -234,12 +241,14 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 	}
 }
 
-//static void vI2CReceiveTask(void *rxQueueHandle) {
-//
-//	while(1) {
-//
-//	}
-//}
+static void vI2CReceiveTask(void *rxQueueHandle) {
+
+	char *buf;
+	while(1) {
+		xQueueReceive(rxQueue, buf, portMAX_DELAY);
+		printf("%s\n", buf); // TODO send to upper layer
+	}
+}
 
 /**************************************************************************//**
  * @brief  Main function
@@ -258,12 +267,17 @@ int main(void) {
 	if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
 	else { puts("Creation of Busy Semaphore Successful!");}
 
+	// Create the rx queue and report on it
+	rxQueue = xQueueCreate(10, sizeof(char *));
+	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
+	else { puts("Creation of Rx Queue Successful");}
+
 	/* Setting up i2c */
 	setupI2C();
 
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, I2C_TaskPriority, NULL);
-	//xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TaskPriority, NULL);
+	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TaskPriority, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -462,7 +476,9 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
-		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+		  if (xQueueSendFromISR(rxQueue, i2c_rxBuffer, NULL) == errQUEUE_FULL) {
+			 puts("Error, Queue is full");
+		  }
 		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -475,7 +491,9 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
-		  printf("%s\n", i2c_rxBuffer); // TODO replace with insert to queue
+		  if (xQueueSendFromISR(rxQueue, i2c_rxBuffer, NULL) == errQUEUE_FULL) {
+			 puts("Error, Queue is full");
+		  }
 		  i2c_rxBufferIndex = 0;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
