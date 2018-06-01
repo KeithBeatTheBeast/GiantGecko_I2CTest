@@ -164,9 +164,9 @@ void setupI2C(void) {
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOACK | \
-			I2C_CTRL_AUTOSN;
-		  	//I2C_CTRL_BITO_160PCC | \
-		  	//I2C_CTRL_GIBITO;
+			I2C_CTRL_AUTOSN | \
+		  	I2C_CTRL_BITO_160PCC | \
+		  	I2C_CTRL_GIBITO;
 
 	// Set Rx index to zero.
 	i2c_rxBufferIndex = 0;
@@ -187,9 +187,6 @@ void setupI2C(void) {
  * @brief Reset I2C as best as we can.
  */
 void resetI2C() {
-	I2C_IntClear(I2C1, i2c_IFC_flags);
-	I2C1->CMD = I2C_CMD_ABORT;
-	NVIC_EnableIRQ(I2C1_IRQn);
 
 	I2C1->CMD |= I2C_CMD_CLEARTX;
 	I2C1->CMD |= I2C_CMD_START | I2C_CMD_STOP;
@@ -328,15 +325,13 @@ void I2C1_IRQHandler(void) {
   /*
    * Arbitration lost
    */
-//  else if ((flags & I2C_IF_ARBLOST) | (flags & I2C_IF_BUSERR)) {
-//	  // TODO handle ARBLOST better in the future
+//  else if (flags & (I2C_IF_BUSERR | I2C_IF_ARBLOST)){
 //	  i2c_rxBufferIndex = 0;
+//	  NVIC_DisableIRQ(I2C1_IRQn);
+//	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 //	  I2C_IntClear(I2C1, i2c_IFC_flags);
-//	  I2C1->CMD = I2C_CMD_ABORT; // TODO give error to upper layer
-//	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
-//	  if (printfEnable) {puts("Arbitration Lost/Bus Error");}
+//	  return;
 //  }
-
   /*
    * Master has transmitted stop condition
    * Transmission is officially over
@@ -377,6 +372,7 @@ void I2C1_IRQHandler(void) {
 	   * I2C_CTRL_AUTOSN sends STOP, we'll need to implement message to upper layer
 	   */
 	  if (state == 0xDF || state == 0x9F) {
+		  xSemaphoreGiveFromISR(busySem, NULL); //TODO Send error to upper layer
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  }
 
