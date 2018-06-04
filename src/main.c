@@ -183,10 +183,12 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 static void vI2CReceiveTask(void *rxQueueHandle) {
 
-	char *buf;
+	cspI2CReceive_t *rxStruct;
+
 	while(1) {
-		xQueueReceive(rxQueue, buf, portMAX_DELAY);
-		printf("%s\n", buf); // TODO send to upper layer
+		xQueueReceive(rxQueue, rxStruct, portMAX_DELAY);
+		printf("%s\n", rxStruct->rxData); // TODO send to upper layer
+		vPortFree(rxStruct);
 	}
 }
 
@@ -208,7 +210,7 @@ int main(void) {
 	else { puts("Creation of Busy Semaphore Successful!");}
 
 	// Create the rx queue and report on it
-	rxQueue = xQueueCreate(10, sizeof(char *));
+	rxQueue = xQueueCreate(10, sizeof(cspI2CReceive_t *));
 	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Queue Successful");}
 
@@ -216,8 +218,8 @@ int main(void) {
 	setupI2C();
 
 	// Create I2C Tasks
-	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, I2C_TaskPriority, NULL);
-	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TaskPriority, NULL);
+	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -280,6 +282,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_BITO) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  vPortFree(i2c_Rx);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("BITO Timeout");}
   }
@@ -291,6 +294,7 @@ void I2C1_IRQHandler(void) {
 //	  i2c_rxBufferIndex = RX_INDEX_INIT;
 //	  NVIC_DisableIRQ(I2C1_IRQn);
 //	  I2C_IntDisable(I2C1, i2c_IEN_flags);
+//	  vPortFree(i2c_Rx);
 //	  I2C_IntClear(I2C1, i2c_IFC_flags);
 //	  return;
 //  }
@@ -376,7 +380,9 @@ void I2C1_IRQHandler(void) {
 	  else if (state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
-	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
+	      i2c_Rx = pvPortMalloc(sizeof(cspI2CReceive_t));
+
+		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
 	  }
 
@@ -388,7 +394,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  else if (state == SLAVE_RECIV_DATA_ACK) {
 	      /* Data received */
-	      rxData[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  i2c_Rx->rxData[i2c_Rx->rxIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -416,7 +422,7 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
-		  if (xQueueSendFromISR(rxQueue, rxData, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxQueue, i2c_Rx, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
 		  }
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
@@ -431,7 +437,7 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
-		  if (xQueueSendFromISR(rxQueue, rxData, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxQueue, i2c_Rx, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
 		  }
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
@@ -446,5 +452,6 @@ void I2C1_IRQHandler(void) {
 	  NVIC_DisableIRQ(I2C1_IRQn);
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  vPortFree(i2c_Rx);
   }
 }
