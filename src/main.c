@@ -33,9 +33,9 @@
  ******************************************************************************/
 
 /*******************************************************************************
- * Edited by Kgmills on 5/11/18
+ * Initially edited by Kgmills on 5/11/18
  *
-; * Initial Code for using the I2C Interface for an Silabs EFM32 Giant Gecko board for
+ * Initial Code for using the I2C Interface for an Silabs EFM32 Giant Gecko board for
  * testing purposes. Just sends messages back and forth, capitalizing some characters
  * Simple, but will be used to develop a functional physical layer for our project.
  *
@@ -66,37 +66,20 @@
  *
  ******************************************************************************/
 
-// Includes for starting the chip, i2c, oscillators and gpio pins
-#include <stdbool.h>
-#include "em_i2c.h"
-#include "em_cmu.h"
-#include "em_gpio.h"
-
-// FreeRTOS includes
-#include "FreeRTOS.h"
-#include "FreeRTOSConfig.h"
-#include "semphr.h"
-#include "task.h"
-#include "queue.h"
-
-// Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
-#include "makePrintfWork.h"
-
-/* Defines*/
-#define I2C_ADDRESS                     0xE2
-#define I2C_RXBUFFER_SIZE               256
-#define I2C_TaskPriority				2
+// Main Header file - This file will eventually be renamed cspI2C.c
+#include "cspI2C.h"
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
-#define printfEnable					false
+#define printfEnable					false // TODO remove from final version
 
 // Buffers++
 uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
 uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
-int16_t i2c_rxBufferIndex, i2c_txBufferIndex;
+int16_t i2c_rxBufferIndex;
 
 /* Transmission and Receiving Structure */
-static volatile I2C_TransferSeq_TypeDef i2cTransfer;
+//static volatile cspI2CTransfer_t i2c_Tx;
+static volatile cspI2CTransfer_t i2c_Tx;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem;
@@ -159,14 +142,6 @@ void setupI2C(void) {
 	/* Initializing the I2C */
 	I2C_Init(I2C1, &i2cInit);
 
-	/* Initializing I2C transfer */
-	i2cTransfer.addr          = I2C_ADDRESS;
-	i2cTransfer.flags         = I2C_FLAG_WRITE;
-	i2cTransfer.buf[0].data   = i2c_txBuffer;
-	i2cTransfer.buf[0].len    = sizeof(i2c_txBuffer);
-	i2cTransfer.buf[1].data   = i2c_rxBuffer;
-	i2cTransfer.buf[1].len    = I2C_RXBUFFER_SIZE;
-
 	/* Setting up to enable slave mode */
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
@@ -214,11 +189,15 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 	while (1) {
 
 		// TODO pend queue
-		// Reset Index
-		i2c_txBufferIndex = -1;
+		/* Initializing I2C transfer */
+		i2c_Tx.addr    = I2C_ADDRESS;          // TODO get address from LUT
+		i2c_Tx.rwBit   = I2C_FLAG_WRITE;       // TODO hardcode to write.
+		i2c_Tx.data    = i2c_txBuffer;         // TODO data from queue
+		i2c_Tx.len     = sizeof(i2c_txBuffer);
+		i2c_Tx.txIndex = -1;                   // Reset index to -1 always
 
 		// Load address. TODO format data from queue
-		I2C1->TXDATA = i2cTransfer.addr & 0xFE; // Ensure LSB is Write
+		I2C1->TXDATA = i2c_Tx.addr & 0xFE; // Ensure LSB is Write
 
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
@@ -297,14 +276,14 @@ int main(void) {
  */
 static inline bool addNewByteToTxBuffer() {
 
-	if (++i2c_txBufferIndex > i2cTransfer.buf[0].len - 1) { // TODO Macro the 2
+	if (++i2c_Tx.txIndex > i2c_Tx.len - 1) { // TODO Macro the 2
 		return true;
 	}
 
 	else if (I2C1->IF & I2C_IF_TXBL) {
-		I2C1->TXDATA = i2cTransfer.buf[0].data[i2c_txBufferIndex];
+		I2C1->TXDATA = i2c_Tx.data[i2c_Tx.txIndex];
 		I2C_IntClear(I2C1, I2C_IFC_TXC);
-		if (printfEnable) {printf("Char at location %d: %c\n", i2c_txBufferIndex, i2cTransfer.buf[0].data[i2c_txBufferIndex]);}
+		if (printfEnable) {printf("Char at location %d: %c\n", i2c_Tx.txIndex, i2c_Tx.data[i2c_Tx.txIndex]);}
 	}
 	return false;
 }
