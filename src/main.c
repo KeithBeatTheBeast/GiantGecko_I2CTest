@@ -112,7 +112,7 @@ void setupI2C(void) {
 		  	I2C_CTRL_GIBITO;
 
 	// Set Rx index to zero.
-	i2c_rxBufferIndex = 0;
+	i2c_rxBufferIndex = RX_INDEX_INIT;
 
 	// Enable interrupts
 	I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -237,7 +237,7 @@ int main(void) {
  */
 static inline bool addNewByteToTxBuffer() {
 
-	if (++i2c_Tx.txIndex > i2c_Tx.len - 1) { // TODO Macro the 2
+	if (++i2c_Tx.txIndex > i2c_Tx.len + ADD_BYTE_LIMIT) {
 		return true;
 	}
 
@@ -254,12 +254,12 @@ static inline bool addNewByteToTxBuffer() {
  * These are the states in the I2C State register that will enter there.
  */
 static inline bool checkBusHoldStates(int state){
-	return ((state & 0x97) | \
-			(state & 0x9F) | \
-			(state & 0xD7) | \
-			(state & 0xDF) | \
-			(state & 0x71) | \
-			(state & 0xB1));
+	return ((state & MASTER_TRANS_ADDR_ACK) | \
+			(state & MASTER_TRANS_ADDR_NACK) | \
+			(state & MASTER_TRANS_DATA_ACK) | \
+			(state & MASTER_TRANS_DATA_NACK) | \
+			(state & SLAVE_RECIV_ADDR_ACK) | \
+			(state & SLAVE_RECIV_DATA_ACK));
 }
 
 /**************************************************************************//**
@@ -278,7 +278,7 @@ void I2C1_IRQHandler(void) {
    * Reset Rx index
    */
   if (flags & I2C_IF_BITO) {
-	  i2c_rxBufferIndex = 0;
+	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("BITO Timeout");}
@@ -288,7 +288,7 @@ void I2C1_IRQHandler(void) {
    * Arbitration lost
    */
 //  else if (flags & (I2C_IF_BUSERR | I2C_IF_ARBLOST)){
-//	  i2c_rxBufferIndex = 0;
+//	  i2c_rxBufferIndex = RX_INDEX_INIT;
 //	  NVIC_DisableIRQ(I2C1_IRQn);
 //	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 //	  I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -333,7 +333,7 @@ void I2C1_IRQHandler(void) {
 	   * TODO completed version should cut contact (stop) and send error message to upper layer
 	   * I2C_CTRL_AUTOSN sends STOP, we'll need to implement message to upper layer
 	   */
-	  if (state == 0xDF || state == 0x9F) {
+	  if (state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
 		  xSemaphoreGiveFromISR(busySem, NULL); //TODO Send error to upper layer
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  }
@@ -346,7 +346,7 @@ void I2C1_IRQHandler(void) {
 	   * Since it's an ACK, we send another byte, unless at the end of message
 	   * Then we'll send a stop condition
 	   */
-	  else if (state == 0xD7 || state == 0x97) {
+	  else if (state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
 
 		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
 			  I2C1->CMD |= I2C_CMD_STOP; // So send a stop
@@ -373,7 +373,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  else if (state == 0x71) {
+	  else if (state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
 	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
@@ -386,7 +386,7 @@ void I2C1_IRQHandler(void) {
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
-	  else if (state == 0xB1) {
+	  else if (state == SLAVE_RECIV_DATA_ACK) {
 	      /* Data received */
 	      rxData[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
@@ -415,11 +415,11 @@ void I2C1_IRQHandler(void) {
    */
   else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
-	  if (i2c_rxBufferIndex != 0) {
+	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
 		  if (xQueueSendFromISR(rxQueue, rxData, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
 		  }
-		  i2c_rxBufferIndex = 0;
+		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, i2c_IFC_flags);
   }
@@ -434,7 +434,7 @@ void I2C1_IRQHandler(void) {
 		  if (xQueueSendFromISR(rxQueue, rxData, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
 		  }
-		  i2c_rxBufferIndex = 0;
+		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_RSTART);
   }
@@ -442,7 +442,7 @@ void I2C1_IRQHandler(void) {
   // Put BUSERR, ARBLOST, CLTO, here.
   // Wait for timeout on semaphore
   else {
-	  i2c_rxBufferIndex = 0;
+	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  NVIC_DisableIRQ(I2C1_IRQn);
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
