@@ -67,52 +67,13 @@
  ******************************************************************************/
 
 // Main Header file - This file will eventually be renamed cspI2C.c
-#include "cspI2C.h"
+#include "cspI2C_EFM32.h"
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
 #define printfEnable					false // TODO remove from final version
 
 // Buffers++
-uint8_t i2c_txBuffer[] = "let go of my gecko!"; // Modified message.
-uint8_t i2c_rxBuffer[I2C_RXBUFFER_SIZE];
 int16_t i2c_rxBufferIndex;
-
-/* Transmission and Receiving Structure */
-//static volatile cspI2CTransfer_t i2c_Tx;
-static volatile cspI2CTransfer_t i2c_Tx;
-
-// FreeRTOS handles
-static SemaphoreHandle_t busySem;
-static QueueHandle_t 	 rxQueue;
-
-// Different variable as RXDATAV and TXBL do not exist for the EFM32GG's IFC/IFS registers. Set to zero.
-#define i2c_IFC_flags (I2C_IFC_ADDR | \
-					  I2C_IFC_SSTOP | \
-					  I2C_IFC_RSTART | \
-					  I2C_IFC_BUSHOLD | \
-					  I2C_IFC_ARBLOST | \
-					  I2C_IFC_NACK | \
-					  I2C_IFC_ACK | \
-					  I2C_IFC_MSTOP | \
-					  I2C_IFC_TXC | \
-					  I2C_IFC_BITO | \
-					  I2C_IFC_CLTO | \
-					  I2C_IFC_START | \
-					  I2C_IFC_BUSERR)
-
-// Should be used as the 2nd argument for I2C_IntEnable/I2C_IntDisable
-#define i2c_IEN_flags (I2C_IEN_ADDR | \
-					  I2C_IEN_RXDATAV | \
-					  I2C_IEN_SSTOP | \
-					  I2C_IEN_BUSHOLD | \
-					  I2C_IEN_RSTART | \
-					  I2C_IEN_ARBLOST | \
-					  I2C_IEN_NACK | \
-					  I2C_IEN_ACK | \
-					  I2C_IEN_MSTOP | \
-					  I2C_IEN_CLTO | \
-					  I2C_IEN_BUSERR | \
-					  I2C_IEN_BITO)
 
 /**************************************************************************//**
  * @brief  Setup I2C
@@ -125,10 +86,10 @@ void setupI2C(void) {
 	* defined in FreeRTOSConfig.h
 	* Currently, that is set to 5.
 	*/
-	NVIC_SetPriority(I2C1_IRQn, 5);
+	NVIC_SetPriority(I2C1_IRQn, I2C_INT_PRIO_LEVEL);
 
 	// Using default settings
-	I2C_Init_TypeDef i2cInit = {true, true, 0, I2C_FREQ_FASTPLUS_MAX, i2cClockHLRAsymetric};
+	I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
 
 	/* Using PC4 (SDA) and PC5 (SCL) */
 	GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
@@ -190,14 +151,14 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 		// TODO pend queue
 		/* Initializing I2C transfer */
-		i2c_Tx.addr    = I2C_ADDRESS;          // TODO get address from LUT
-		i2c_Tx.rwBit   = I2C_FLAG_WRITE;       // TODO hardcode to write.
-		i2c_Tx.data    = i2c_txBuffer;         // TODO data from queue
-		i2c_Tx.len     = sizeof(i2c_txBuffer);
-		i2c_Tx.txIndex = -1;                   // Reset index to -1 always
+		i2c_Tx.addr    = I2C_ADDRESS;           // TODO get address from LUT
+		i2c_Tx.rwBit   = I2C_WRITE;        // TODO hardcode to write.
+		i2c_Tx.txData  = (uint8_t*)&"let go of my gecko!"; // TODO data from queue
+		i2c_Tx.len     = sizeof(i2c_Tx.txData);
+		i2c_Tx.txIndex = TX_INDEX_INIT;                    // Reset index to -1 always
 
 		// Load address. TODO format data from queue
-		I2C1->TXDATA = i2c_Tx.addr & 0xFE; // Ensure LSB is Write
+		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
 
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
@@ -205,7 +166,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * 20) == pdTRUE) {
+		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) == pdTRUE) {
 			if (printfEnable) {puts("Semaphore Taken");}
 		}
 
@@ -215,7 +176,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		}
 
 		// TODO replace with semaphore when Brendan helps with NVIC priorities
-		vTaskDelay(portTICK_PERIOD_MS * 1);
+		vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
 		if (printfEnable) {puts("Tx Looping");}
 	}
 }
@@ -281,9 +242,9 @@ static inline bool addNewByteToTxBuffer() {
 	}
 
 	else if (I2C1->IF & I2C_IF_TXBL) {
-		I2C1->TXDATA = i2c_Tx.data[i2c_Tx.txIndex];
+		I2C1->TXDATA = i2c_Tx.txData[i2c_Tx.txIndex];
 		I2C_IntClear(I2C1, I2C_IFC_TXC);
-		if (printfEnable) {printf("Char at location %d: %c\n", i2c_Tx.txIndex, i2c_Tx.data[i2c_Tx.txIndex]);}
+		if (printfEnable) {printf("Char at location %d: %c\n", i2c_Tx.txIndex, i2c_Tx.txData[i2c_Tx.txIndex]);}
 	}
 	return false;
 }
@@ -427,7 +388,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  else if (state == 0xB1) {
 	      /* Data received */
-	      i2c_rxBuffer[i2c_rxBufferIndex++] = I2C1->RXDATA;
+	      rxData[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -455,7 +416,7 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
-		  if (xQueueSendFromISR(rxQueue, i2c_rxBuffer, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxQueue, rxData, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
 		  }
 		  i2c_rxBufferIndex = 0;
@@ -470,7 +431,7 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
-		  if (xQueueSendFromISR(rxQueue, i2c_rxBuffer, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxQueue, rxData, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
 		  }
 		  i2c_rxBufferIndex = 0;
