@@ -73,7 +73,7 @@
 #define printfEnable					false // TODO remove from final version
 
 // Buffers++
-int16_t i2c_rxBufferIndex;
+uint8_t tempTxBuf[] = "let go of my gecko!";
 
 /**************************************************************************//**
  * @brief  Setup I2C
@@ -153,8 +153,8 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		/* Initializing I2C transfer */
 		i2c_Tx.addr    = I2C_ADDRESS;           // TODO get address from LUT
 		i2c_Tx.rwBit   = I2C_WRITE;        // TODO hardcode to write.
-		i2c_Tx.txData  = (uint8_t*)&"let go of my gecko!"; // TODO data from queue
-		i2c_Tx.len     = sizeof(i2c_Tx.txData);
+		i2c_Tx.txData  = tempTxBuf; // TODO data from queue
+		i2c_Tx.len     = 20;         // TODO need to somehow get size of memory
 		i2c_Tx.txIndex = TX_INDEX_INIT;                    // Reset index to -1 always
 
 		// Load address. TODO format data from queue
@@ -175,20 +175,18 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			resetI2C();
 		}
 
-		// TODO replace with semaphore when Brendan helps with NVIC priorities
 		vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
-		if (printfEnable) {puts("Tx Looping");}
 	}
 }
 
 static void vI2CReceiveTask(void *rxQueueHandle) {
 
-	cspI2CReceive_t *rxStruct;
+	uint8_t *data;
 
 	while(1) {
-		xQueueReceive(rxQueue, rxStruct, portMAX_DELAY);
-		printf("%s\n", rxStruct->rxData); // TODO send to upper layer
-		vPortFree(rxStruct);
+		xQueueReceive(rxQueue, data, portMAX_DELAY);
+		printf("Do i ever get here? %s\n", data); // TODO send to upper layer
+		vPortFree(data);
 	}
 }
 
@@ -210,7 +208,7 @@ int main(void) {
 	else { puts("Creation of Busy Semaphore Successful!");}
 
 	// Create the rx queue and report on it
-	rxQueue = xQueueCreate(10, sizeof(cspI2CReceive_t *));
+	rxQueue = xQueueCreate(10, sizeof(uint8_t *));
 	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Queue Successful");}
 
@@ -380,7 +378,7 @@ void I2C1_IRQHandler(void) {
 	  else if (state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
-	      i2c_Rx = pvPortMalloc(sizeof(cspI2CReceive_t));
+	      i2c_Rx = pvPortMalloc(sizeof(uint8_t) * MAX_FRAME_SIZE);
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
@@ -394,7 +392,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  else if (state == SLAVE_RECIV_DATA_ACK) {
 	      /* Data received */
-		  i2c_Rx->rxData[i2c_Rx->rxIndex++] = I2C1->RXDATA;
+		  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -453,5 +451,6 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  vPortFree(i2c_Rx);
+	  return;
   }
 }

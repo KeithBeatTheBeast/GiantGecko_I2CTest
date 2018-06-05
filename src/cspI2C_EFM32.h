@@ -54,6 +54,7 @@
 #define TX_DELAY_MULTIPLIER				1    // Multiplied by portTICK_PERIOD_MS to determine wait time after transfer complete
 #define RX_INDEX_INIT					0	 // Rx Index start value/reset value
 #define ADD_BYTE_LIMIT					-1   // Used to determine whether or not we're at the end of Tx
+#define MAX_FRAME_SIZE					256  // Adjustable, assume worst case scenario
 
 /* State Register Values Checked in ISR */
 #define MASTER_TRANS_ADDR_ACK			0x97 // Master Sent ADDR+W, ACK Received
@@ -113,17 +114,13 @@ typedef struct {
 } cspI2CTransfer_t;
 
 /* Transmission Structure */
-static volatile cspI2CTransfer_t i2c_Tx;
+volatile cspI2CTransfer_t i2c_Tx;
 
-/*
- * @ Structure for Rx
- */
-typedef struct {
-	uint8_t rxData[I2C_RXBUF_LEN]; // Rx Data pointer.
-	uint8_t rxIndex;
-} cspI2CReceive_t;
+// Pointer
+volatile uint8_t *i2c_Rx;
 
-static cspI2CReceive_t *i2c_Rx;
+// Rx buffer index
+static int16_t i2c_rxBufferIndex;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem;
