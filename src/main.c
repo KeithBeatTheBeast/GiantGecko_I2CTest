@@ -186,7 +186,7 @@ static void vI2CReceiveTask(void *rxQueueHandle) {
 	while(1) {
 		xQueueReceive(rxQueue, data, portMAX_DELAY);
 		printf("Do i ever get here? %s\n", data); // TODO send to upper layer
-		vPortFree(data);
+		xSharedMemPut(i2cSharedMem, i2c_Rx);
 	}
 }
 
@@ -211,6 +211,10 @@ int main(void) {
 	rxQueue = xQueueCreate(10, sizeof(uint8_t *));
 	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Queue Successful");}
+
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 5);
+	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
+	else {puts("Creation of Shared Memory Successful");}
 
 	/* Setting up i2c */
 	setupI2C();
@@ -280,7 +284,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_BITO) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  vPortFree(i2c_Rx);
+	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("BITO Timeout");}
   }
@@ -292,7 +296,6 @@ void I2C1_IRQHandler(void) {
 //	  i2c_rxBufferIndex = RX_INDEX_INIT;
 //	  NVIC_DisableIRQ(I2C1_IRQn);
 //	  I2C_IntDisable(I2C1, i2c_IEN_flags);
-//	  vPortFree(i2c_Rx);
 //	  I2C_IntClear(I2C1, i2c_IFC_flags);
 //	  return;
 //  }
@@ -378,7 +381,7 @@ void I2C1_IRQHandler(void) {
 	  else if (state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
-	      i2c_Rx = pvPortMalloc(sizeof(uint8_t) * MAX_FRAME_SIZE);
+	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
@@ -450,7 +453,7 @@ void I2C1_IRQHandler(void) {
 	  NVIC_DisableIRQ(I2C1_IRQn);
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  vPortFree(i2c_Rx);
+	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  return;
   }
 }

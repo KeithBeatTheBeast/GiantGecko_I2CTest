@@ -39,6 +39,8 @@
 #include "task.h"
 #include "queue.h"
 
+#include "SharedMemory.h"
+
 // Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
 #include "makePrintfWork.h" // TODO remove from final version
 
@@ -125,5 +127,7 @@ static int16_t i2c_rxBufferIndex;
 // FreeRTOS handles
 static SemaphoreHandle_t busySem;
 static QueueHandle_t 	 rxQueue;
+
+static SharedMem_t		 i2cSharedMem;
 
 #endif /* CSPI2C_EFM32_H_ */
