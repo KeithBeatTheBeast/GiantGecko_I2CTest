@@ -23,26 +23,28 @@
 SharedMem_t xSharedMemoryCreate(size_t blockSize, int16_t numBlocks) {
 
 	// Make handle, return NULL if not possible.
-	SharedMem_t shMem = xQueueCreate(blockSize, numBlocks);
+	SharedMem_t shMem = xQueueCreate(numBlocks, sizeof(void*));
 
 	if (shMem == NULL) {
 		return NULL;
 	}
 
 	// We want an array of the pointers, because say if a queue send fails we want to free them all.
-	void* initPointers[numBlocks];
+	void** initPointers = pvPortMalloc(sizeof(void*) * numBlocks);
 
 	// Iterate over number of blocks.
 	for (int16_t i = 0; i < numBlocks; i++) {
-		initPointers[i] = pvPortMalloc(sizeof(blockSize)); // Malloc, keep track of pointer now and in future loops
-		if (xQueueSend(shMem, initPointers[i], portTICK_PERIOD_MS) == errQUEUE_FULL) { // Put in queue
+		initPointers[i] = pvPortMalloc(sizeof(uint8_t) * blockSize); // Malloc, keep track of pointer now and in future loops
+		if (xQueueSend(shMem, &initPointers[i], QUEUE_TO) != pdTRUE) { // Put in queue
 			vQueueDelete(shMem); // If that doesn't work, delete the queue
 			for (int16_t j = 0; j <= i; j++) {
 				vPortFree(initPointers[j]); // Free all blocks up to that point
 			}
+			vPortFree(initPointers);
 			return NULL; // Fale
 		}
 	}
+	vPortFree(initPointers);
 	return shMem; // Return handle otherwise
 }
 
@@ -52,9 +54,8 @@ SharedMem_t xSharedMemoryCreate(size_t blockSize, int16_t numBlocks) {
  * @return Pointer to block of memory
  */
 void *pSharedMemGet(SharedMem_t shMem) {
-
 	void* memBlock;
-	if (xQueueReceive(shMem, memBlock, QUEUE_TO) == pdFALSE) {return pdFALSE;}
+	if (xQueueReceive(shMem, &memBlock, QUEUE_TO) == pdFALSE) {return pdFALSE;}
 	return memBlock;
 }
 
@@ -67,7 +68,7 @@ void *pSharedMemGet(SharedMem_t shMem) {
 void *pSharedMemGetFromISR(SharedMem_t shMem, BaseType_t *pxHTW) {
 
 	void* memBlock;
-	if (xQueueReceiveFromISR(shMem, memBlock, pxHTW) == pdFALSE) {return pdFALSE;}
+	if (xQueueReceiveFromISR(shMem, &memBlock, pxHTW) == pdFALSE) {return pdFALSE;}
 	return memBlock;
 }
 
@@ -78,7 +79,7 @@ void *pSharedMemGetFromISR(SharedMem_t shMem, BaseType_t *pxHTW) {
  * @return pdTRUE if successful, pdFALSE if not.
  */
 BaseType_t xSharedMemPut(SharedMem_t shMem, void *memBlock) {
-	return xQueueSend(shMem, memBlock, QUEUE_TO);
+	return xQueueSend(shMem, &memBlock, QUEUE_TO);
 }
 
 /*
@@ -88,5 +89,5 @@ BaseType_t xSharedMemPut(SharedMem_t shMem, void *memBlock) {
  * @return pdTRUE if successful, pdFALSE if not.
  */
 BaseType_t xSharedMemPutFromISR(SharedMem_t shMem, void *memBlock, BaseType_t *pxHTW) {
-	return xQueueSendFromISR(shMem, memBlock, pxHTW);
+	return xQueueSendFromISR(shMem, &memBlock, pxHTW);
 }

@@ -69,6 +69,8 @@
 // Main Header file - This file will eventually be renamed cspI2C.c
 #include "cspI2C_EFM32.h"
 
+#include "testSharedMem.h"
+
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
 #define printfEnable					false // TODO remove from final version
 
@@ -147,6 +149,7 @@ void resetI2C() {
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
 static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle and semaphore handle
+
 	while (1) {
 
 		// TODO pend queue
@@ -184,9 +187,9 @@ static void vI2CReceiveTask(void *rxQueueHandle) {
 	uint8_t *data;
 
 	while(1) {
-		xQueueReceive(rxQueue, data, portMAX_DELAY);
+		xQueueReceive(rxQueue, &data, portMAX_DELAY);
 		printf("Do i ever get here? %s\n", data); // TODO send to upper layer
-		xSharedMemPut(i2cSharedMem, i2c_Rx);
+		xSharedMemPut(i2cSharedMem, data);
 	}
 }
 
@@ -201,6 +204,9 @@ int main(void) {
   
 	// Use this to enable printfs.
 	SWO_SetupForPrint();
+
+	// Tests
+//	runAllSharedMemTests();
 
 	// Create the semaphore and report on it.
 	busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initalizer
@@ -220,7 +226,7 @@ int main(void) {
 	setupI2C();
 
 	// Create I2C Tasks
-	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 10, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 25, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
@@ -423,8 +429,9 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_SSTOP) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
-		  if (xQueueSendFromISR(rxQueue, i2c_Rx, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
+			 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  }
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
@@ -438,8 +445,9 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_RSTART) {
 	  if (printfEnable) {puts("Repeated condition detected");}
 	  if (i2c_rxBufferIndex != 0) {
-		  if (xQueueSendFromISR(rxQueue, i2c_Rx, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
 			 puts("Error, Queue is full");
+			 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  }
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
