@@ -119,7 +119,7 @@ typedef struct {
 volatile cspI2CTransfer_t i2c_Tx;
 
 // Pointer
-volatile uint8_t *i2c_Rx;
+uint8_t *i2c_Rx;
 
 // Rx buffer index
 static int16_t i2c_rxBufferIndex;

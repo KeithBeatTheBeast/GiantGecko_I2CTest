@@ -205,7 +205,7 @@ int main(void) {
 	// Use this to enable printfs.
 	SWO_SetupForPrint();
 
-	// Tests
+	// Tests TODO more tests
 //	runAllSharedMemTests();
 
 	// Create the semaphore and report on it.
@@ -218,7 +218,7 @@ int main(void) {
 	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Queue Successful");}
 
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 5);
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 10);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
 
@@ -295,16 +295,6 @@ void I2C1_IRQHandler(void) {
 	  if (printfEnable) {puts("BITO Timeout");}
   }
 
-  /*
-   * Arbitration lost
-   */
-//  else if (flags & (I2C_IF_BUSERR | I2C_IF_ARBLOST)){
-//	  i2c_rxBufferIndex = RX_INDEX_INIT;
-//	  NVIC_DisableIRQ(I2C1_IRQn);
-//	  I2C_IntDisable(I2C1, i2c_IEN_flags);
-//	  I2C_IntClear(I2C1, i2c_IFC_flags);
-//	  return;
-//  }
   /*
    * Master has transmitted stop condition
    * Transmission is officially over
@@ -384,13 +374,13 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  else if (state == SLAVE_RECIV_ADDR_ACK) {
+	  else if (state == SLAVE_RECIV_ADDR_ACK || (flags & I2C_IF_ADDR)) {
 	      I2C1->RXDATA;
 
 	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
-	      if (printfEnable) {puts("Address match non-repeat start");}
+	      if (true) {puts("Address match non-repeat start");}
 	  }
 
 	  /*
@@ -399,9 +389,11 @@ void I2C1_IRQHandler(void) {
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
-	  else if (state == SLAVE_RECIV_DATA_ACK) {
+	  else if (state == SLAVE_RECIV_DATA_ACK || (flags & I2C_IF_RXDATAV)) {
 	      /* Data received */
-		  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  uint8_t temp = I2C1->RXDATA;
+		  printf("Temp: %c\n", temp);
+		  i2c_Rx[i2c_rxBufferIndex++] = temp;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -417,7 +409,7 @@ void I2C1_IRQHandler(void) {
   else if (flags & I2C_IF_ADDR) {
       I2C1->RXDATA;
       I2C_IntClear(I2C1, I2C_IFC_ADDR);
-      if (printfEnable) {puts("Address match outside of BUSHOLD subconditionals");}
+      if (true) {puts("Address match outside of BUSHOLD subconditionals");}
   }
 
   /*
