@@ -232,7 +232,7 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	//xTaskCreate(vIThrowTestErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY + 1, NULL);
+	//xTaskCreate(vIThrowI2CTestErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY + 1, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -430,6 +430,7 @@ void I2C1_IRQHandler(void) {
 		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  //}
 		  printf("%s\n", tempRxBuf);
+		  strcpy(tempRxBuf, "                "); // TODO remove
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
