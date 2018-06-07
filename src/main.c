@@ -76,6 +76,7 @@
 
 // Buffers++
 uint8_t tempTxBuf[] = "let go of my gecko!";
+uint8_t tempRxBuf[20];
 
 /**************************************************************************//**
  * @brief  Setup I2C
@@ -264,12 +265,20 @@ static inline bool addNewByteToTxBuffer() {
  * These are the states in the I2C State register that will enter there.
  */
 static inline bool checkBusHoldStates(int state){
-	return ((state & MASTER_TRANS_ADDR_ACK) | \
-			(state & MASTER_TRANS_ADDR_NACK) | \
-			(state & MASTER_TRANS_DATA_ACK) | \
-			(state & MASTER_TRANS_DATA_NACK) | \
-			(state & SLAVE_RECIV_ADDR_ACK) | \
-			(state & SLAVE_RECIV_DATA_ACK));
+	return (state & (MASTER_TRANS_ADDR_ACK | \
+			MASTER_TRANS_ADDR_NACK | \
+			MASTER_TRANS_DATA_ACK | \
+			MASTER_TRANS_DATA_NACK | \
+			SLAVE_RECIV_ADDR_ACK | \
+			SLAVE_RECIV_DATA_ACK));
+}
+
+static inline bool checkFlags(int flag) {
+	return (flag & (I2C_IF_BUSHOLD | \
+			I2C_IF_ACK | \
+			I2C_IF_NACK | \
+			I2C_IF_ADDR | \
+			I2C_IF_RXDATAV));
 }
 
 /**************************************************************************//**
@@ -290,7 +299,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_BITO) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
+	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("BITO Timeout");}
   }
@@ -301,7 +310,7 @@ void I2C1_IRQHandler(void) {
    * Report success to upper layer
    * Release semaphore
    */
-  else if (flags & I2C_IF_MSTOP) {
+  if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
@@ -312,7 +321,7 @@ void I2C1_IRQHandler(void) {
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
    */
-  else if (checkBusHoldStates(state) || (flags & I2C_IF_BUSHOLD)) {
+  if (checkBusHoldStates(state) || checkFlags(flags)) {
 
 	  if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
@@ -377,10 +386,10 @@ void I2C1_IRQHandler(void) {
 	  else if (state == SLAVE_RECIV_ADDR_ACK || (flags & I2C_IF_ADDR)) {
 	      I2C1->RXDATA;
 
-	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+	      //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL); TODO reimplement
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
-	      if (true) {puts("Address match non-repeat start");}
+	      if (printfEnable) {puts("Address match non-repeat start");}
 	  }
 
 	  /*
@@ -390,26 +399,14 @@ void I2C1_IRQHandler(void) {
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
 	  else if (state == SLAVE_RECIV_DATA_ACK || (flags & I2C_IF_RXDATAV)) {
-	      /* Data received */
-		  uint8_t temp = I2C1->RXDATA;
-		  printf("Temp: %c\n", temp);
-		  i2c_Rx[i2c_rxBufferIndex++] = temp;
+		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
 	  if (flags & I2C_IF_BUSHOLD) {
 		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+		  if (printfEnable) {puts("BUSHOLD");}
 	  }
-  }
-
-  /*
-   * Address Match but not catching on the BUSHOLD subconditional
-   * Read from RXDATAV, if necessary, and clear flag.
-   */
-  else if (flags & I2C_IF_ADDR) {
-      I2C1->RXDATA;
-      I2C_IntClear(I2C1, I2C_IFC_ADDR);
-      if (true) {puts("Address match outside of BUSHOLD subconditionals");}
   }
 
   /*
@@ -417,43 +414,29 @@ void I2C1_IRQHandler(void) {
    * of whether or not the Master was speaking to us
    * CHECK and see if we were spoken to
    * By looking at the index of the Rx buffer
+   * Also repeated start since it is a valid way to end a transmission
    */
-  else if (flags & I2C_IF_SSTOP) {
+  if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
 	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
-		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
-			 puts("Error, Queue is full");
-			 xSharedMemPut(i2cSharedMem, i2c_Rx);
-		  }
+		  //if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
+		//	 puts("Error, Queue is full");
+		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
+		  //}
+		  printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
-      I2C_IntClear(I2C1, i2c_IFC_flags);
+      I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
-  /*
-   * Repeated Start - This is also a valid way to end transmission
-   * Do the same as SSTOP
-   */
-  else if (flags & I2C_IF_RSTART) {
-	  if (printfEnable) {puts("Repeated condition detected");}
-	  if (i2c_rxBufferIndex != 0) {
-		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
-			 puts("Error, Queue is full");
-			 xSharedMemPut(i2cSharedMem, i2c_Rx);
-		  }
-		  i2c_rxBufferIndex = RX_INDEX_INIT;
-	  }
-      I2C_IntClear(I2C1, I2C_IFC_RSTART);
-  }
 
   // Put BUSERR, ARBLOST, CLTO, here.
   // Wait for timeout on semaphore
-  else {
+  if (flags & (I2C_IF_BUSERR | I2C_IF_ARBLOST | I2C_IF_CLTO)) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  NVIC_DisableIRQ(I2C1_IRQn);
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
-	  return;
+	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
   }
 }

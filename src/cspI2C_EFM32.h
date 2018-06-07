@@ -52,7 +52,7 @@
 #define I2C_READ					    0xFF // Future Potential Functionality
 #define I2C_INT_PRIO_LEVEL				5    // Interrupt priority level
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
-#define TX_SEM_TO_MULTIPLIER			20   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
+#define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
 #define TX_DELAY_MULTIPLIER				1    // Multiplied by portTICK_PERIOD_MS to determine wait time after transfer complete
 #define RX_INDEX_INIT					0	 // Rx Index start value/reset value
 #define ADD_BYTE_LIMIT					-1   // Used to determine whether or not we're at the end of Tx
