@@ -182,7 +182,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			resetI2C();
 		}
 
-		vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
+		//vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
 	}
 }
 
