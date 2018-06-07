@@ -22,16 +22,15 @@ void vThrowI2CErrors(void *iDontCare) {
 		//int myRand = rand();
 		//if (myRand % 3 == 0) {
 			// Throw ARBLOST
-		puts("THROW ARBLOST");
 		I2C1->IFS |= I2C_IFS_ARBLOST;
-		vTaskDelay(portTICK_PERIOD_MS * 4);
+		vTaskDelay(portTICK_PERIOD_MS);
 		//}
 
 		//else if (myRand % 7 == 0) {
 			// Throw BUSERR
-			//puts("THROW BUSERR");
-			//I2C1->IFS |= I2C_IFS_BUSERR;
-			//vTaskDelay(portTICK_PERIOD_MS * 10);
+		// Throw ARBLOST
+		I2C1->IFS |= I2C_IFS_BUSERR;
+		vTaskDelay(portTICK_PERIOD_MS);
 		//}
 
 //		else if (myRand % 11 == 0) {

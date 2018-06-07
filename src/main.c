@@ -226,8 +226,8 @@ int main(void) {
 
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY + 1, NULL);
+	//xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -434,15 +434,15 @@ void I2C1_IRQHandler(void) {
 
   // Put BUSERR, ARBLOST, CLTO, here.
   // Wait for timeout on semaphore
-  if (flags & I2C_IF_ARBLOST) {
+  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR)) {
+	  puts("ARBLOST/BUSERR");
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
-	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST);
-	  //I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR);
 	  I2C1->CMD |= I2C_CMD_ABORT;
-	  xSemaphoreGiveFromISR(busySem, NULL);
+	  //xSemaphoreGiveFromISR(busySem, NULL);
   }
 
-  if (flags & (I2C_IF_BUSERR | I2C_IF_CLTO)) {
+  if (flags & I2C_IF_CLTO) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  //NVIC_DisableIRQ(I2C1_IRQn);
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
