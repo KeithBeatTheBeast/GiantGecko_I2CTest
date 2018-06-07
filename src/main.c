@@ -312,6 +312,7 @@ void I2C1_IRQHandler(void) {
    */
   if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  flags &= ~I2C_IF_SSTOP;
 	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
 	  if (printfEnable) {puts("Master Stop Detected");}
   }
