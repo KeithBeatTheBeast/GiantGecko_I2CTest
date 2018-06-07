@@ -174,16 +174,10 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) == pdTRUE) {
-			if (printfEnable) {puts("Semaphore Taken");}
+		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
+			puts("Semaphore Timeout"); // TODO send error to upper layer
+			//resetI2C();
 		}
-
-		else {
-			if (printfEnable) {puts("Semaphore Timeout");} // TODO send error to upper layer
-			resetI2C();
-		}
-
-		//vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
 	}
 }
 
@@ -319,7 +313,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  flags &= ~I2C_IF_SSTOP;
-	  xSemaphoreGiveFromISR(busySem, NULL); //TODO remove comment
+	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("Master Stop Detected");}
   }
 
@@ -430,7 +424,7 @@ void I2C1_IRQHandler(void) {
 		//	 puts("Error, Queue is full");
 		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  //}
-		  printf("%s\n", tempRxBuf);
+		  //printf("%s\n", tempRxBuf);
 		  strcpy(tempRxBuf, "                "); // TODO remove
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
@@ -440,9 +434,17 @@ void I2C1_IRQHandler(void) {
 
   // Put BUSERR, ARBLOST, CLTO, here.
   // Wait for timeout on semaphore
-  if (flags & (I2C_IF_BUSERR | I2C_IF_ARBLOST | I2C_IF_CLTO)) {
+  if (flags & I2C_IF_ARBLOST) {
+	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
+	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST);
+	  //I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C1->CMD |= I2C_CMD_ABORT;
+	  xSemaphoreGiveFromISR(busySem, NULL);
+  }
+
+  if (flags & (I2C_IF_BUSERR | I2C_IF_CLTO)) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
-	  NVIC_DisableIRQ(I2C1_IRQn);
+	  //NVIC_DisableIRQ(I2C1_IRQn);
 	  I2C_IntDisable(I2C1, i2c_IEN_flags);
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);

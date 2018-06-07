@@ -15,43 +15,43 @@
 
 void vThrowI2CErrors(void *iDontCare) {
 
-	vTaskDelay(portTICK_PERIOD_MS * 10);
+	vTaskDelay(portTICK_PERIOD_MS * 3);
 	puts("Tremble before me, I2C Driver. I am going to throw error flags!");
 
 	while (1) {
-		int myRand = rand();
-		if (myRand % 3 == 0) {
+		//int myRand = rand();
+		//if (myRand % 3 == 0) {
 			// Throw ARBLOST
-			puts("THROW ARBLOST");
-			I2C1->IFS |= I2C_IFS_ARBLOST;
-			vTaskDelay(portTICK_PERIOD_MS * 10);
-		}
+		puts("THROW ARBLOST");
+		I2C1->IFS |= I2C_IFS_ARBLOST;
+		vTaskDelay(portTICK_PERIOD_MS * 4);
+		//}
 
-		else if (myRand % 7 == 0) {
+		//else if (myRand % 7 == 0) {
 			// Throw BUSERR
-			puts("THROW BUSERR");
-			I2C1->IFS |= I2C_IFS_BUSERR;
-			vTaskDelay(portTICK_PERIOD_MS * 10);
-		}
+			//puts("THROW BUSERR");
+			//I2C1->IFS |= I2C_IFS_BUSERR;
+			//vTaskDelay(portTICK_PERIOD_MS * 10);
+		//}
 
-		else if (myRand % 11 == 0) {
-			// Throw CLTO
-			puts("THROW CLTO");
-			I2C1->IFS |= I2C_IFS_CLTO;
-			vTaskDelay(portTICK_PERIOD_MS * 10);
-		}
-
-		else if (myRand % 5 == 0) {
-			// Throw BITO
-			puts("THROW BITO");
-			I2C1->IFS |= I2C_IFS_BITO;
-			vTaskDelay(portTICK_PERIOD_MS * 10);
-		}
-
-		else {
-			// Short delay
-			vTaskDelay(portTICK_PERIOD_MS * 5);
-		}
+//		else if (myRand % 11 == 0) {
+//			// Throw CLTO
+//			puts("THROW CLTO");
+//			I2C1->IFS |= I2C_IFS_CLTO;
+//			vTaskDelay(portTICK_PERIOD_MS * 10);
+//		}
+//
+//		else if (myRand % 5 == 0) {
+//			// Throw BITO
+//			puts("THROW BITO");
+//			I2C1->IFS |= I2C_IFS_BITO;
+//			vTaskDelay(portTICK_PERIOD_MS * 10);
+//		}
+//
+//		else {
+//			// Short delay
+//			vTaskDelay(portTICK_PERIOD_MS * 5);
+//		}
 	}
 }
 
