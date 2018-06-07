@@ -114,6 +114,8 @@ void setupI2C(void) {
 		  	I2C_CTRL_BITO_160PCC | \
 		  	I2C_CTRL_GIBITO;
 
+	I2C1->SADDRMASK |= 0x7F;
+
 	// Set Rx index to zero.
 	i2c_rxBufferIndex = RX_INDEX_INIT;
 
@@ -166,6 +168,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
+		I2C_IntEnable(I2C1, I2C_IF_TXBL);
 
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
@@ -227,8 +230,9 @@ int main(void) {
 	setupI2C();
 
 	// Create I2C Tasks
-	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE + 25, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	//xTaskCreate(vIThrowTestErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY + 1, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -299,6 +303,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_BITO) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("BITO Timeout");}
@@ -360,6 +365,7 @@ void I2C1_IRQHandler(void) {
 	  else if (state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
 
 		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
+			  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 			  I2C1->CMD |= I2C_CMD_STOP; // So send a stop
 			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
 		  }
@@ -384,7 +390,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  else if (state == SLAVE_RECIV_ADDR_ACK || (flags & I2C_IF_ADDR)) {
+	  if (state == SLAVE_RECIV_ADDR_ACK || (flags & I2C_IF_ADDR)) {
 	      I2C1->RXDATA;
 
 	      //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL); TODO reimplement
@@ -406,7 +412,6 @@ void I2C1_IRQHandler(void) {
 
 	  if (flags & I2C_IF_BUSHOLD) {
 		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
-		  if (printfEnable) {puts("BUSHOLD");}
 	  }
   }
 
