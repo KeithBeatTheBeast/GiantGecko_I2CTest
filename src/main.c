@@ -70,6 +70,7 @@
 #include "cspI2C_EFM32.h"
 
 #include "testSharedMem.h"
+#include "EFM32_throwI2CErrors.h"
 
 // Boolean I use for debugging to determine whether or not I want a stream of printfs.
 #define printfEnable					false // TODO remove from final version
@@ -232,7 +233,7 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	//xTaskCreate(vIThrowI2CTestErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY + 1, NULL);
+	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY + 1, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
