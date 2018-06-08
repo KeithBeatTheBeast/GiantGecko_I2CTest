@@ -74,6 +74,8 @@
 #define BUSERR_ERR						0x08
 #define ARBLOST_ERR						0x10
 #define TIMEOUT_ERR						0x20
+#define E_QUEUE_ERR						0x40
+#define F_QUEUE_ERR						0x80
 
 /*
  * ISR Interrupt Enable Lines
@@ -133,10 +135,10 @@
 typedef struct {
 	uint8_t *txData;           // Pointer to the data.
 	int16_t txIndex;           // Tx Array Index
+	uint16_t transmissionError; // See below for error codes
 	uint8_t addr;              // Address, see https://www.i2c-bus.org/addressing/ WE ONLY USE 7-BIT ADDRESSSING
 	uint8_t rwBit;             // Read (0) or write (1)
 	uint8_t len;               // In the code it will be given by CSP
-	uint8_t transmissionError; // See below for error codes
 } cspI2CTransfer_t;
 
 /* Transmission Structure */

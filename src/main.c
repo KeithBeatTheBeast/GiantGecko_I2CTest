@@ -195,8 +195,9 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 		// Error happened. TODO send to upper layer
 		if (i2c_Tx.transmissionError) {
-			puts("Error Happened");
+			printf("Error: %x\n", i2c_Tx.transmissionError);
 		}
+		vTaskDelay(portTICK_PERIOD_MS);
 	}
 }
 
@@ -206,7 +207,7 @@ static void vI2CReceiveTask(void *rxQueueHandle) {
 
 	while(1) {
 		xQueueReceive(rxQueue, &data, portMAX_DELAY);
-		printf("Do i ever get here? %s\n", data); // TODO send to upper layer
+		printf("DATA: %s\n", data); // TODO send to upper layer
 		xSharedMemPut(i2cSharedMem, data);
 	}
 }
@@ -245,8 +246,8 @@ int main(void) {
 
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	//xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	//xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -320,7 +321,7 @@ void I2C1_IRQHandler(void) {
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
-	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
+	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 
   }
@@ -409,7 +410,14 @@ void I2C1_IRQHandler(void) {
 	  if ((flags & I2C_IF_ADDR) || state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
-	      //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL); TODO reimplement
+	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+
+	      // We were unable to allocate memory from the shared memory system
+	      // Report error to task, issue an abort and a NACK
+	      if (i2c_Rx == pdFALSE) {
+	    	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
+	    	  I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_NACK;
+	      }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
@@ -422,7 +430,8 @@ void I2C1_IRQHandler(void) {
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
 	  else if ((flags & I2C_IF_RXDATAV) || state == SLAVE_RECIV_DATA_ACK) {
-		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  //tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -439,13 +448,11 @@ void I2C1_IRQHandler(void) {
    * Also repeated start since it is a valid way to end a transmission
    */
   if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
-	  if (printfEnable) {puts("Stop condition detected");}
 	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
-		  //if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
-		//	 puts("Error, Queue is full");
-		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
-		  //}
-//		  printf("%s\n", tempRxBuf);
+		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
+			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
+			 xSharedMemPut(i2cSharedMem, i2c_Rx);
+		  }
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
@@ -465,6 +472,7 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD = I2C_CMD_ABORT;
+	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 }
