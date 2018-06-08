@@ -180,7 +180,6 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
 
-		puts("Start Condition");
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
 		I2C_IntEnable(I2C1, I2C_IF_TXBL);
@@ -243,7 +242,7 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	//xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	//xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -420,7 +419,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  else if (state == SLAVE_RECIV_DATA_ACK || (flags & I2C_IF_RXDATAV)) {
 		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
-	      if (printfEnable) {puts("Data received");}
+	      if (true) {puts("Data received");}
 	  }
 
 	  if (flags & I2C_IF_BUSHOLD) {
