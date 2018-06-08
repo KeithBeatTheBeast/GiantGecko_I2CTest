@@ -188,10 +188,12 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 static void vI2CReceiveTask(void *rxQueueHandle) {
 
 	uint8_t *data;
+	int16_t index;
 
 	while(1) {
-		xQueueReceive(rxQueue, &data, portMAX_DELAY);
-		printf("DATA: %s\n", data); // TODO send to upper layer
+		xQueueReceive(rxDataQueue, &data, portMAX_DELAY);
+		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
+		printf("DATA SIZE: %d; DATA: %s\n", index, data); // TODO send to upper layer
 		xSharedMemPut(i2cSharedMem, data);
 	}
 }
@@ -217,9 +219,13 @@ int main(void) {
 	else { puts("Creation of Busy Semaphore Successful!");}
 
 	// Create the rx queue and report on it
-	rxQueue = xQueueCreate(10, sizeof(uint8_t *));
-	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
-	else { puts("Creation of Rx Queue Successful");}
+	rxDataQueue = xQueueCreate(20, sizeof(uint8_t *));
+	if (rxDataQueue == NULL) { puts("Creation of Rx Data Queue Failed!"); } // TODO replace with error statements to init
+	else { puts("Creation of Rx Data Queue Successful");}
+
+	rxIndexQueue = xQueueCreate(20, sizeof(int16_t));
+	if (rxIndexQueue == NULL) { puts("Creation of Rx Index Queue Failed!"); } // TODO replace with error statements to init
+	else { puts("Creation of Rx Index Queue Successful");}
 
 	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 1);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
@@ -444,10 +450,15 @@ void I2C1_IRQHandler(void) {
 
 		  // We're done the transmission, so disable auto-acks.
 		  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
+		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
 			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
 			 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  }
+
+		  if (xQueueSendFromISR(rxIndexQueue, &i2c_rxBufferIndex, NULL) == errQUEUE_FULL) {
+			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
+		  }
+
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);

@@ -151,8 +151,9 @@ uint8_t *i2c_Rx;
 static int16_t i2c_rxBufferIndex;
 
 // FreeRTOS handles
-static SemaphoreHandle_t busySem;
-static QueueHandle_t 	 rxQueue;
+static SemaphoreHandle_t busySem; // Tx semaphore
+static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
+
 
 static SharedMem_t		 i2cSharedMem;
 
