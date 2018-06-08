@@ -176,12 +176,10 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		else {i2c_Tx.txData  = tempTxBuf1;}
 		i2c_Tx.len     = 20;         			// TODO need to somehow get size of memory
 		i2c_Tx.txIndex = TX_INDEX_INIT;         // Reset index to -1 always
+		i2c_Tx.transmissionError = NO_TRANS_ERR;// Set error flag to zero.
 
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
-
-		// Declare that there is no error
-		transmissionError = false;
 
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
@@ -191,11 +189,14 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
 		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
-			puts("Semaphore Timeout"); // TODO send error to upper layer
 			I2C1->CMD = I2C_CMD_ABORT;
+			i2c_Tx.transmissionError |= TIMEOUT_ERR;
 		}
 
-
+		// Error happened. TODO send to upper layer
+		if (i2c_Tx.transmissionError) {
+			puts("Error Happened");
+		}
 	}
 }
 
@@ -245,7 +246,7 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	//xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	//xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -315,12 +316,13 @@ void I2C1_IRQHandler(void) {
    * Reset Rx index
    */
   if (flags & I2C_IF_BITO) {
-	  transmissionError = true;
+	  i2c_Tx.transmissionError |= BITO_ERR;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
-	  if (true) {puts("BITO Timeout");}
+	  xSemaphoreGiveFromISR(busySem, NULL);
+
   }
 
   /*
@@ -360,14 +362,13 @@ void I2C1_IRQHandler(void) {
 	   * ADDR+W (0x9F) or
 	   * DATA (0xDF)
 	   * has been sent and a NACK has been received
-	   * TODO completed version should cut contact (stop) and send error message to upper layer
-	   * I2C_CTRL_AUTOSN sends STOP, we'll need to implement message to upper layer
+	   * Do not allow TXBL to trigger the ISR, report "something bad happened".
 	   */
-	  if (state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK || \
-			  (flags & I2C_IF_NACK)) {
-		  //xSemaphoreGiveFromISR(busySem, NULL); //TODO Send error to upper layer
+	  if ((flags & I2C_IF_NACK) || state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
+		  i2c_Tx.transmissionError |= NACK_ERR;
 		  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
+		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
 
 	  /*
@@ -378,7 +379,7 @@ void I2C1_IRQHandler(void) {
 	   * Since it's an ACK, we send another byte, unless at the end of message
 	   * Then we'll send a stop condition
 	   */
-	  else if (state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
+	  else if ((flags & I2C_IF_ACK) ||state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
 
 		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
 			  I2C_IntDisable(I2C1, I2C_IF_TXBL);
@@ -397,7 +398,6 @@ void I2C1_IRQHandler(void) {
 	   * See Table 16.10, page 433 of the EFM32GG Reference Manual
 	   * All States that would trigger a BUSHOLD are accounted for.
 	   */
-
 	  /*
 	   * Slave Receiver:
 	   * Start Condition on the line has been detected
@@ -406,7 +406,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  if (state == SLAVE_RECIV_ADDR_ACK || (flags & I2C_IF_ADDR)) {
+	  if ((flags & I2C_IF_ADDR) || state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
 	      //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL); TODO reimplement
@@ -421,7 +421,7 @@ void I2C1_IRQHandler(void) {
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
-	  else if (state == SLAVE_RECIV_DATA_ACK || (flags & I2C_IF_RXDATAV)) {
+	  else if ((flags & I2C_IF_RXDATAV) || state == SLAVE_RECIV_DATA_ACK) {
 		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
@@ -452,12 +452,19 @@ void I2C1_IRQHandler(void) {
   }
 
   // Put BUSERR, ARBLOST, CLTO, here.
-  // Wait for timeout on semaphore
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
-	  puts("ARB, BUS, CLTO");
-	  transmissionError = true;
+	  if (flags & I2C_IF_ARBLOST) {
+		  i2c_Tx.transmissionError |= ARBLOST_ERR;
+	  }
+	  if (flags & I2C_IF_BUSERR) {
+		  i2c_Tx.transmissionError |= BUSERR_ERR;
+	  }
+	  if (flags & I2C_IF_CLTO) {
+		  i2c_Tx.transmissionError |= CLTO_ERR;
+	  }
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD = I2C_CMD_ABORT;
+	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 }

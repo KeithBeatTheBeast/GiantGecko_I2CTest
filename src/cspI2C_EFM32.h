@@ -66,6 +66,15 @@
 #define SLAVE_RECIV_ADDR_ACK			0x71 // Slave has received ADDR+W
 #define SLAVE_RECIV_DATA_ACK			0xB1 // Slave has received DATA
 
+/* cspI2CTransfer_t Error codes for transmissionError field */
+#define NO_TRANS_ERR					0x00
+#define NACK_ERR						0x01
+#define BITO_ERR						0x02
+#define CLTO_ERR						0x04
+#define BUSERR_ERR						0x08
+#define ARBLOST_ERR						0x10
+#define TIMEOUT_ERR						0x20
+
 /*
  * ISR Interrupt Enable Lines
  * What conditions in the register
@@ -106,13 +115,28 @@
 /*
  * @brief Structure for Tx
  * One exists in global memory for the driver, as a static volatile.
+ * Members:
+ * txData: Pointer to the data
+ * txIndex: Index of tx
+ * addr: Address of target node, supplied by CSP
+ * rwBit: Usually 0 for writes only
+ * len: Length of txData in bytes, provided by CSP
+ * transmissionError: Error byte, bits represent potential errors, and there can be multiple errors
+ * 	0 - All is well
+ * 	1 - NACK
+ * 	2 - BITO
+ * 	4 - CLTO
+ * 	8 - BUSERR
+ * 	16 - ARBLOST
+ * 	32 - The Semaphore timed out
  */
 typedef struct {
-  uint8_t addr;    // Address, see https://www.i2c-bus.org/addressing/ WE ONLY USE 7-BIT ADDRESSSING
-  uint8_t rwBit;   // Read (0) or write (1)
-  uint8_t *txData; // Pointer to the data.
-  uint8_t len;     // In the code it should usually be sizeof(data) and at least 1
-  int16_t txIndex; // Tx Array Index
+	uint8_t *txData;           // Pointer to the data.
+	int16_t txIndex;           // Tx Array Index
+	uint8_t addr;              // Address, see https://www.i2c-bus.org/addressing/ WE ONLY USE 7-BIT ADDRESSSING
+	uint8_t rwBit;             // Read (0) or write (1)
+	uint8_t len;               // In the code it will be given by CSP
+	uint8_t transmissionError; // See below for error codes
 } cspI2CTransfer_t;
 
 /* Transmission Structure */
@@ -123,9 +147,6 @@ uint8_t *i2c_Rx;
 
 // Rx buffer index
 static int16_t i2c_rxBufferIndex;
-
-// Transmission flag
-static volatile bool transmissionError;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem;
