@@ -439,7 +439,7 @@ void I2C1_IRQHandler(void) {
 		//	 puts("Error, Queue is full");
 		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  //}
-		  printf("%s\n", tempRxBuf);
+		 // printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
@@ -451,7 +451,7 @@ void I2C1_IRQHandler(void) {
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
-	  I2C1->CMD |= I2C_CMD_ABORT;
+	  I2C1->CMD = I2C_CMD_ABORT;
 	  //xSemaphoreGiveFromISR(busySem, NULL);
   }
 }
