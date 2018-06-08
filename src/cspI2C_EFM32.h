@@ -118,11 +118,14 @@ typedef struct {
 /* Transmission Structure */
 volatile cspI2CTransfer_t i2c_Tx;
 
-// Pointer
+// Rx Buffer Pointer
 uint8_t *i2c_Rx;
 
 // Rx buffer index
 static int16_t i2c_rxBufferIndex;
+
+// Transmission flag
+static volatile bool transmissionError;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem;

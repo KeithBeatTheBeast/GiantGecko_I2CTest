@@ -180,6 +180,9 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
 
+		// Declare that there is no error
+		transmissionError = false;
+
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
 		I2C_IntEnable(I2C1, I2C_IF_TXBL);
@@ -192,7 +195,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			I2C1->CMD = I2C_CMD_ABORT;
 		}
 
-		//vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
+
 	}
 }
 
@@ -312,6 +315,7 @@ void I2C1_IRQHandler(void) {
    * Reset Rx index
    */
   if (flags & I2C_IF_BITO) {
+	  transmissionError = true;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
@@ -419,7 +423,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  else if (state == SLAVE_RECIV_DATA_ACK || (flags & I2C_IF_RXDATAV)) {
 		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
-	      if (true) {puts("Data received");}
+	      if (printfEnable) {puts("Data received");}
 	  }
 
 	  if (flags & I2C_IF_BUSHOLD) {
@@ -451,6 +455,7 @@ void I2C1_IRQHandler(void) {
   // Wait for timeout on semaphore
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
 	  puts("ARB, BUS, CLTO");
+	  transmissionError = true;
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD = I2C_CMD_ABORT;
