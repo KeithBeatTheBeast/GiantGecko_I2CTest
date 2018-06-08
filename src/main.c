@@ -76,7 +76,8 @@
 #define printfEnable					false // TODO remove from final version
 
 // Buffers++
-uint8_t tempTxBuf[] = "let go of my gecko!";
+uint8_t tempTxBuf0[] = "let go of my gecko?";
+uint8_t tempTxBuf1[] = "LET GO OF MY GECKO!";
 uint8_t tempRxBuf[20];
 
 /**************************************************************************//**
@@ -93,7 +94,17 @@ void setupI2C(void) {
 	NVIC_SetPriority(I2C1_IRQn, I2C_INT_PRIO_LEVEL);
 
 	// Using default settings
-	I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
+	//I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
+
+	// TODO confirm we are using 400kbit/sec, all testing based on S-band board
+	I2C_Init_TypeDef i2cInit = { \
+			true, \
+			true, \
+			0, \
+			I2C_FREQ_FAST_MAX, \
+			i2cClockHLRAsymetric \
+		};
+
 
 	/* Using PC4 (SDA) and PC5 (SCL) */
 	GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
@@ -154,15 +165,17 @@ void resetI2C() {
  *****************************************************************************/
 static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle and semaphore handle
 
+	uint32_t c = 0;
 	while (1) {
 
 		// TODO pend queue
 		/* Initializing I2C transfer */
 		i2c_Tx.addr    = I2C_ADDRESS;           // TODO get address from LUT
-		i2c_Tx.rwBit   = I2C_WRITE;        // TODO hardcode to write.
-		i2c_Tx.txData  = tempTxBuf; // TODO data from queue
-		i2c_Tx.len     = 20;         // TODO need to somehow get size of memory
-		i2c_Tx.txIndex = TX_INDEX_INIT;                    // Reset index to -1 always
+		i2c_Tx.rwBit   = I2C_WRITE;				// TODO hardcode to write.
+		if (c++ % 2 == 0) {i2c_Tx.txData  = tempTxBuf0;} // TODO temp, remove.
+		else {i2c_Tx.txData  = tempTxBuf1;}
+		i2c_Tx.len     = 20;         			// TODO need to somehow get size of memory
+		i2c_Tx.txIndex = TX_INDEX_INIT;         // Reset index to -1 always
 
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
@@ -178,6 +191,8 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			puts("Semaphore Timeout"); // TODO send error to upper layer
 			//resetI2C();
 		}
+
+		vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
 	}
 }
 
@@ -301,7 +316,7 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
-	  if (printfEnable) {puts("BITO Timeout");}
+	  if (true) {puts("BITO Timeout");}
   }
 
   /*
@@ -424,8 +439,7 @@ void I2C1_IRQHandler(void) {
 		//	 puts("Error, Queue is full");
 		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  //}
-		  //printf("%s\n", tempRxBuf);
-		  strcpy(tempRxBuf, "                "); // TODO remove
+		  printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
@@ -434,19 +448,10 @@ void I2C1_IRQHandler(void) {
 
   // Put BUSERR, ARBLOST, CLTO, here.
   // Wait for timeout on semaphore
-  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR)) {
-	  puts("ARBLOST/BUSERR");
+  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
-	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR);
+	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD |= I2C_CMD_ABORT;
 	  //xSemaphoreGiveFromISR(busySem, NULL);
-  }
-
-  if (flags & I2C_IF_CLTO) {
-	  i2c_rxBufferIndex = RX_INDEX_INIT;
-	  //NVIC_DisableIRQ(I2C1_IRQn);
-	  I2C_IntDisable(I2C1, i2c_IEN_flags);
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
   }
 }
