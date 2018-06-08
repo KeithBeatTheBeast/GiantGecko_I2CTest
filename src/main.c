@@ -121,11 +121,11 @@ void setupI2C(void) {
 	/* Setting up to enable slave mode */
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
-			I2C_CTRL_AUTOACK | \
 			I2C_CTRL_AUTOSN | \
 		  	I2C_CTRL_BITO_160PCC | \
 		  	I2C_CTRL_GIBITO;
 
+	// Removed: I2C_CTRL_AUTOACK |
 	I2C1->SADDRMASK |= 0x7F;
 
 	// Set Rx index to zero.
@@ -141,23 +141,6 @@ void setupI2C(void) {
 	if (I2C1->STATE & I2C_STATE_BUSY) {
 		I2C1->CMD = I2C_CMD_ABORT;
 	}
-}
-
-/*
- * @brief Reset I2C as best as we can.
- */
-void resetI2C() {
-
-	I2C1->CMD |= I2C_CMD_CLEARTX;
-	I2C1->CMD |= I2C_CMD_START | I2C_CMD_STOP;
-	I2C1->CMD |= I2C_CMD_CLEARPC;
-	I2C1->CMD |= I2C_CMD_ABORT;
-
-	vTaskDelay(portTICK_PERIOD_MS * 1);
-
-	I2C_IntClear(I2C1, i2c_IFC_flags);
-	I2C_IntEnable(I2C1, i2c_IEN_flags);
-	NVIC_EnableIRQ(I2C1_IRQn);
 }
 
 /**************************************************************************//**
@@ -196,6 +179,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Error happened. TODO send to upper layer
 		if (i2c_Tx.transmissionError) {
 			printf("Error: %x\n", i2c_Tx.transmissionError);
+			vTaskDelay(portTICK_PERIOD_MS);
 		}
 		vTaskDelay(portTICK_PERIOD_MS);
 	}
@@ -237,7 +221,7 @@ int main(void) {
 	if (rxQueue == NULL) { puts("Creation of Rx Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Queue Successful");}
 
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 10);
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 1);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
 
@@ -318,6 +302,7 @@ void I2C1_IRQHandler(void) {
    */
   if (flags & I2C_IF_BITO) {
 	  i2c_Tx.transmissionError |= BITO_ERR;
+	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
@@ -416,7 +401,14 @@ void I2C1_IRQHandler(void) {
 	      // Report error to task, issue an abort and a NACK
 	      if (i2c_Rx == pdFALSE) {
 	    	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
-	    	  I2C1->CMD = I2C_CMD_ABORT | I2C_CMD_NACK;
+	    	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
+	      }
+
+	      // We WERE able to retrieve a memory pointer from the shared system
+	      // Send an ACK to the master, and enable auto-acks on the remaining.
+	      else {
+	    	  I2C1->CMD |= I2C_CMD_ACK;
+	    	  I2C1->CTRL |= I2C_CTRL_AUTOACK;
 	      }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
@@ -449,6 +441,9 @@ void I2C1_IRQHandler(void) {
    */
   if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
 	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
+
+		  // We're done the transmission, so disable auto-acks.
+		  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 		  if (xQueueSendFromISR(rxQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
 			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
 			 xSharedMemPut(i2cSharedMem, i2c_Rx);
@@ -469,6 +464,8 @@ void I2C1_IRQHandler(void) {
 	  if (flags & I2C_IF_CLTO) {
 		  i2c_Tx.transmissionError |= CLTO_ERR;
 	  }
+
+	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD = I2C_CMD_ABORT;
