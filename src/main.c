@@ -190,7 +190,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// will eventually become a task where at the top, we pend a queue.
 		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
 			puts("Semaphore Timeout"); // TODO send error to upper layer
-			//resetI2C();
+			I2C1->CMD = I2C_CMD_ABORT;
 		}
 
 		//vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);

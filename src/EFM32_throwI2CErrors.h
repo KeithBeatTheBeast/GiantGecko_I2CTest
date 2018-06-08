@@ -29,13 +29,13 @@ void vThrowI2CErrors(void *iDontCare) {
 //		I2C1->IFS |= I2C_IFS_BUSERR;
 //		vTaskDelay(portTICK_PERIOD_MS * delayMult);
 
-		puts("THROW CLTO");
-		I2C1->IFS |= I2C_IFS_CLTO;
-		vTaskDelay(portTICK_PERIOD_MS * delayMult);
-
-//		puts("THROW BITO");
-//		I2C1->IFS |= I2C_IFS_BITO;
+//		puts("THROW CLTO");
+//		I2C1->IFS |= I2C_IFS_CLTO;
 //		vTaskDelay(portTICK_PERIOD_MS * delayMult);
+
+		puts("THROW BITO");
+		I2C1->IFS |= I2C_IFS_BITO;
+		vTaskDelay(portTICK_PERIOD_MS * delayMult);
 	}
 }
 
