@@ -15,24 +15,24 @@
 
 void vThrowI2CErrors(void *iDontCare) {
 
-	int delayMult = 1;
+	int delayMult = 3;
 	vTaskDelay(portTICK_PERIOD_MS * 3);
 	puts("Tremble before me, I2C Driver. I am going to throw error flags!");
 
 	while (1) {
 
-		puts("THROW ARBLOST");
-		I2C1->IFS |= I2C_IFS_ARBLOST;
+//		puts("THROW ARBLOST");
+//		I2C1->IFS |= I2C_IFS_ARBLOST;
+//		vTaskDelay(portTICK_PERIOD_MS * delayMult);
+
+		puts("THROW BUSERR");
+		I2C1->IFS |= I2C_IFS_BUSERR;
 		vTaskDelay(portTICK_PERIOD_MS * delayMult);
 
-//		puts("THROW BUSERR");
-//		I2C1->IFS |= I2C_IFS_BUSERR;
-//		vTaskDelay(portTICK_PERIOD_MS * delayMult);
-//
 //		puts("THROW CLTO");
 //		I2C1->IFS |= I2C_IFS_CLTO;
 //		vTaskDelay(portTICK_PERIOD_MS * delayMult);
-//
+
 //		puts("THROW BITO");
 //		I2C1->IFS |= I2C_IFS_BITO;
 //		vTaskDelay(portTICK_PERIOD_MS * delayMult);
