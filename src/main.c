@@ -180,6 +180,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
 
+		puts("Start Condition");
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
 		I2C_IntEnable(I2C1, I2C_IF_TXBL);
@@ -192,7 +193,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			//resetI2C();
 		}
 
-		vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
+		//vTaskDelay(portTICK_PERIOD_MS * TX_DELAY_MULTIPLIER);
 	}
 }
 
@@ -292,6 +293,7 @@ static inline bool checkFlags(int flag) {
 			I2C_IF_ACK | \
 			I2C_IF_NACK | \
 			I2C_IF_ADDR | \
+			I2C_IF_TXBL | \
 			I2C_IF_RXDATAV));
 }
 
@@ -315,7 +317,6 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
-	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (true) {puts("BITO Timeout");}
   }
 
@@ -359,8 +360,10 @@ void I2C1_IRQHandler(void) {
 	   * TODO completed version should cut contact (stop) and send error message to upper layer
 	   * I2C_CTRL_AUTOSN sends STOP, we'll need to implement message to upper layer
 	   */
-	  if (state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
-		  xSemaphoreGiveFromISR(busySem, NULL); //TODO Send error to upper layer
+	  if (state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK || \
+			  (flags & I2C_IF_NACK)) {
+		  //xSemaphoreGiveFromISR(busySem, NULL); //TODO Send error to upper layer
+		  I2C_IntDisable(I2C1, I2C_IF_TXBL);
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  }
 
@@ -439,19 +442,18 @@ void I2C1_IRQHandler(void) {
 		//	 puts("Error, Queue is full");
 		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  //}
-		 // printf("%s\n", tempRxBuf);
+//		  printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
-
   // Put BUSERR, ARBLOST, CLTO, here.
   // Wait for timeout on semaphore
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
+	  puts("ARB, BUS, CLTO");
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD = I2C_CMD_ABORT;
-	  //xSemaphoreGiveFromISR(busySem, NULL);
   }
 }
