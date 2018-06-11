@@ -26,11 +26,16 @@
 #ifndef CSPI2C_EFM32_H_
 #define CSPI2C_EFM32_H_
 
-// Includes for starting the chip, i2c, oscillators and gpio pins
+/*
+ * EM Includes for starting the chip and using it's features.
+ * Oscillators, GPIO pins, DMA and I2C
+ */
 #include <stdbool.h>
-#include "em_i2c.h" // TODO intent of this file is to remove this dependency.
+#include "em_i2c.h"
 #include "em_cmu.h"
 #include "em_gpio.h"
+#include "em_dma.h"
+#include "dmactrl.h"
 
 // FreeRTOS includes
 #include "FreeRTOS.h"
