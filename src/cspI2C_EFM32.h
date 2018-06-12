@@ -81,6 +81,7 @@
 #define TIMEOUT_ERR						0x20
 #define E_QUEUE_ERR						0x40
 #define F_QUEUE_ERR						0x80
+#define E_ABORT_BUSHOLD					0x100
 
 /*
  * ISR Interrupt Enable Lines

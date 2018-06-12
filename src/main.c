@@ -84,7 +84,7 @@
 
 // Buffers++
 uint8_t tempTxBuf0[] = "let go of my gecko?";
-uint8_t tempTxBuf1[] = "LET GO OF MY GECKO!";
+uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
 uint8_t tempRxBuf[20];
 
 /********************************************************************
@@ -250,7 +250,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		}
 
 		// Error happened. TODO send to upper layer
-		if (i2c_Tx.transmissionError) {
+		if (i2c_Tx.transmissionError > 1) {
 			printf("Error: %x\n", i2c_Tx.transmissionError);
 			vTaskDelay(portTICK_PERIOD_MS);
 		}
@@ -317,29 +317,6 @@ int main(void) {
 
 	// Should never get here
 	return 0;
-}
-
-/*
- * @brief If there is more data to add to the Tx buffer, that data is added.
- * Function for adding new byte to TX buffer in the case of TXC and TXBL IF conditions
- * First it increments the index of the tx buffer.
- * If the pointer is equal to the size of the buffer, we've reached the end.
- * Send TRUE, in which case the IRQ calling this function will send a STOP condition
- * If the pointer is less than the size of the buffer, we've still got more data
- * Add the next byte to the buffer, return false.
- */
-static inline bool addNewByteToTxBuffer() {
-
-	if (++i2c_Tx.txIndex > i2c_Tx.len + ADD_BYTE_LIMIT) {
-		return true;
-	}
-
-	else if (I2C1->IF & I2C_IF_TXBL) {
-		I2C1->TXDATA = i2c_Tx.txData[i2c_Tx.txIndex];
-		I2C_IntClear(I2C1, I2C_IFC_TXC);
-		if (printfEnable) {printf("Char at location %d: %c\n", i2c_Tx.txIndex, i2c_Tx.txData[i2c_Tx.txIndex]);}
-	}
-	return false;
 }
 
 /*
@@ -505,6 +482,12 @@ void I2C1_IRQHandler(void) {
 
 	  if (flags & I2C_IF_BUSHOLD) {
 		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+	  }
+
+	  if (I2C1->IF & I2C_IF_BUSHOLD) {
+		  I2C1->CMD |= I2C_CMD_ABORT;
+		  i2c_Tx.transmissionError |= E_ABORT_BUSHOLD;
+		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
   }
 
