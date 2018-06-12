@@ -124,10 +124,23 @@ void setupDMA() {
 	DMA_Init(&dmaInit); // TODO THIS FUNCTION HAS BEEN MODIFIED FOR LOCAL IMPLEMENTATION.
 
 	/* Setup call-back function */
-	dmaCB.cbFunc = i2cTransferComplete;
+	dmaCB.cbFunc  = i2cTransferComplete;
 	dmaCB.userPtr = NULL;
 
+	/* Setting up TX channel */
+	txChannelConfig.highPri   = false;
+	txChannelConfig.enableInt = true;
+	txChannelConfig.select    = DMAREQ_I2C1_TXBL;
+	txChannelConfig.cb        = &dmaCB;
+	DMA_CfgChannel(DMA_CHANNEL_I2C_TX, &txChannelConfig);
 
+	/* Setting up TX channel descriptor */
+	txDescriptorConfig.dstInc  = dmaDataIncNone;
+	txDescriptorConfig.srcInc  = dmaDataInc1;
+	txDescriptorConfig.size    = dmaDataSize1;
+	txDescriptorConfig.arbRate = dmaArbitrate1;
+	txDescriptorConfig.hprot   = 0;
+	DMA_CfgDescr(DMA_CHANNEL_I2C_TX, true, &txDescriptorConfig);
 }
 
 /**************************************************************************//**
