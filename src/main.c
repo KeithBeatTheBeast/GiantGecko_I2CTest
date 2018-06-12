@@ -227,7 +227,7 @@ int main(void) {
 	if (rxIndexQueue == NULL) { puts("Creation of Rx Index Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Index Queue Successful");}
 
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 1);
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 10);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
 
@@ -299,23 +299,6 @@ void I2C1_IRQHandler(void) {
    
   int flags = I2C1->IF;
   int state = I2C1->STATE;
-
-  /*
-   * BITO - Bus Idle Timeout
-   * Goes off when SCL has been high for a period specified in I2C_CTRL
-   * Assumes bus is idle, and master operations can begin.
-   * Reset Rx index
-   */
-  if (flags & I2C_IF_BITO) {
-	  i2c_Tx.transmissionError |= BITO_ERR;
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-	  i2c_rxBufferIndex = RX_INDEX_INIT;
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
-	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
-	  xSemaphoreGiveFromISR(busySem, NULL);
-
-  }
 
   /*
    * Master has transmitted stop condition
@@ -465,7 +448,10 @@ void I2C1_IRQHandler(void) {
   }
 
   // Put BUSERR, ARBLOST, CLTO, here.
-  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
+  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
+	  if (flags & I2C_IF_BITO) {
+		  i2c_Tx.transmissionError |= BITO_ERR;
+	  }
 	  if (flags & I2C_IF_ARBLOST) {
 		  i2c_Tx.transmissionError |= ARBLOST_ERR;
 	  }
@@ -478,8 +464,9 @@ void I2C1_IRQHandler(void) {
 
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
-	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
+	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
+	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
