@@ -95,11 +95,10 @@
 					  I2C_IEN_RSTART | \
 					  I2C_IEN_ARBLOST | \
 					  I2C_IEN_NACK | \
-					  I2C_IEN_ACK | \
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_CLTO | \
 					  I2C_IEN_BUSERR | \
-					  I2C_IEN_BITO)
+					  I2C_IEN_BITO) // Removed ACK IEN
 
 /*
  * ISR Interrupt Flag Clear

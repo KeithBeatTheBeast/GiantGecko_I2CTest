@@ -230,9 +230,16 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
 
+		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
+				true,
+				false,
+				(void*)&(I2C1->TXDATA),
+				(void*)i2c_Tx.txData,
+				i2c_Tx.len - 1);
+
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
-		I2C_IntEnable(I2C1, I2C_IF_TXBL);
+		//I2C_IntEnable(I2C1, I2C_IF_TXBL);
 
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
@@ -290,7 +297,7 @@ int main(void) {
 	if (rxIndexQueue == NULL) { puts("Creation of Rx Index Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Index Queue Successful");}
 
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 1);
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 10);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
 
@@ -340,21 +347,17 @@ static inline bool addNewByteToTxBuffer() {
  * These are the states in the I2C State register that will enter there.
  */
 static inline bool checkBusHoldStates(int state){
-	return (state & (MASTER_TRANS_ADDR_ACK | \
-			MASTER_TRANS_ADDR_NACK | \
-			MASTER_TRANS_DATA_ACK | \
+	return (state & (MASTER_TRANS_ADDR_NACK | \
 			MASTER_TRANS_DATA_NACK | \
 			SLAVE_RECIV_ADDR_ACK | \
-			SLAVE_RECIV_DATA_ACK));
+			SLAVE_RECIV_DATA_ACK)); // Removeed MASTER_TRANS_ADDR_ACK and MASTER_TRANS_DATA_ACK
 }
 
 static inline bool checkFlags(int flag) {
 	return (flag & (I2C_IF_BUSHOLD | \
-			I2C_IF_ACK | \
 			I2C_IF_NACK | \
 			I2C_IF_ADDR | \
-			I2C_IF_TXBL | \
-			I2C_IF_RXDATAV));
+			I2C_IF_RXDATAV)); // Removed TXBL and ACK
 }
 
 /**************************************************************************//**
@@ -377,7 +380,7 @@ void I2C1_IRQHandler(void) {
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  I2C_IntDisable(I2C1, I2C_IF_TXBL);
+	  //I2C_IntDisable(I2C1, I2C_IF_TXBL);
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
 
@@ -425,7 +428,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if ((flags & I2C_IF_NACK) || state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
-		  I2C_IntDisable(I2C1, I2C_IF_TXBL);
+		  //I2C_IntDisable(I2C1, I2C_IF_TXBL);
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
@@ -438,19 +441,19 @@ void I2C1_IRQHandler(void) {
 	   * Since it's an ACK, we send another byte, unless at the end of message
 	   * Then we'll send a stop condition
 	   */
-	  else if ((flags & I2C_IF_ACK) ||state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
-
-		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
-			  I2C_IntDisable(I2C1, I2C_IF_TXBL);
-			  I2C1->CMD |= I2C_CMD_STOP; // So send a stop
-			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
-		  }
-
-		  else {
-			  if (printfEnable) {puts("ACK Received after data, no stop issued");}
-		  }
-		  I2C_IntClear(I2C1, I2C_IFC_ACK);
-	  }
+//	  else if ((flags & I2C_IF_ACK) ||state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
+//
+//		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
+//			  //I2C_IntDisable(I2C1, I2C_IF_TXBL);
+//			  I2C1->CMD |= I2C_CMD_STOP; // So send a stop
+//			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
+//		  }
+//
+//		  else {
+//			  if (printfEnable) {puts("ACK Received after data, no stop issued");}
+//		  }
+//		  I2C_IntClear(I2C1, I2C_IFC_ACK);
+//	  }
 
 	  /*
 	   * Slave Receiver BUSHOLD Conditionals
@@ -544,7 +547,7 @@ void I2C1_IRQHandler(void) {
 	  }
 
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-	  I2C_IntDisable(I2C1, I2C_IEN_TXBL);
+	  //I2C_IntDisable(I2C1, I2C_IEN_TXBL);
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
 	  I2C1->CMD = I2C_CMD_ABORT;
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
