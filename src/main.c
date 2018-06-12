@@ -347,37 +347,6 @@ void I2C1_IRQHandler(void) {
   int state = I2C1->STATE;
 
   /*
-   * BITO - Bus Idle Timeout
-   * Goes off when SCL has been high for a period specified in I2C_CTRL
-   * Assumes bus is idle, and master operations can begin.
-   * Reset Rx index
-   */
-  if (flags & I2C_IF_BITO) {
-	  i2c_Tx.transmissionError |= BITO_ERR;
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-	  i2c_rxBufferIndex = RX_INDEX_INIT;
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  //I2C_IntDisable(I2C1, I2C_IF_TXBL);
-	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
-	  xSemaphoreGiveFromISR(busySem, NULL);
-
-  }
-
-  /*
-   * Master has transmitted stop condition
-   * Transmission is officially over
-   * Report success to upper layer
-   * Release semaphore
-   */
-  if (flags & I2C_IF_MSTOP) {
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
-	  flags &= ~I2C_IF_SSTOP;
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOSE;
-	  xSemaphoreGiveFromISR(busySem, NULL);
-	  if (printfEnable) {puts("Master Stop Detected");}
-  }
-
-  /*
    * Conditions that may, but are not guaranteed to, cause a BUSHOLD condition
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
@@ -409,28 +378,6 @@ void I2C1_IRQHandler(void) {
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
-
-	  /*
-	   * Master Transmitter:
-	   * ADDR+W (0x97) or
-	   * DATA (0xD7)
-	   * has been sent and an ACK has been received
-	   * Since it's an ACK, we send another byte, unless at the end of message
-	   * Then we'll send a stop condition
-	   */
-//	  else if ((flags & I2C_IF_ACK) ||state == MASTER_TRANS_DATA_ACK || state == MASTER_TRANS_ADDR_ACK) {
-//
-//		  if (addNewByteToTxBuffer()) { // If the function returns true, we're done transmitting
-//			  //I2C_IntDisable(I2C1, I2C_IF_TXBL);
-//			  I2C1->CMD |= I2C_CMD_STOP; // So send a stop
-//			  if (printfEnable) {puts("ACK Received after data, stop issued"); }
-//		  }
-//
-//		  else {
-//			  if (printfEnable) {puts("ACK Received after data, no stop issued");}
-//		  }
-//		  I2C_IntClear(I2C1, I2C_IFC_ACK);
-//	  }
 
 	  /*
 	   * Slave Receiver BUSHOLD Conditionals
@@ -489,6 +436,21 @@ void I2C1_IRQHandler(void) {
 		  i2c_Tx.transmissionError |= E_ABORT_BUSHOLD;
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
+	  return;
+  }
+
+  /*
+   * Master has transmitted stop condition
+   * Transmission is officially over
+   * Report success to upper layer
+   * Release semaphore
+   */
+  if (flags & I2C_IF_MSTOP) {
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  flags &= ~I2C_IF_SSTOP;
+	  I2C1->CTRL &= ~I2C_CTRL_AUTOSE;
+	  xSemaphoreGiveFromISR(busySem, NULL);
+	  if (printfEnable) {puts("Master Stop Detected");}
   }
 
   /*
@@ -518,7 +480,10 @@ void I2C1_IRQHandler(void) {
   }
 
   // Put BUSERR, ARBLOST, CLTO, here.
-  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO)) {
+  if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
+	  if (flags & I2C_IF_BITO) {
+		  i2c_Tx.transmissionError |= BITO_ERR;
+	  }
 	  if (flags & I2C_IF_ARBLOST) {
 		  i2c_Tx.transmissionError |= ARBLOST_ERR;
 	  }
@@ -530,9 +495,9 @@ void I2C1_IRQHandler(void) {
 	  }
 
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-	  //I2C_IntDisable(I2C1, I2C_IEN_TXBL);
-	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO);
+	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
+	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
