@@ -237,7 +237,7 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	//xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -299,6 +299,42 @@ void I2C1_IRQHandler(void) {
    
   int flags = I2C1->IF;
   int state = I2C1->STATE;
+
+  if (flags & I2C_IF_ADDR) {
+      I2C1->RXDATA;
+
+      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+
+      // We were unable to allocate memory from the shared memory system
+      // Report error to task, issue an abort and a NACK
+      if (i2c_Rx == pdFALSE) {
+    	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
+    	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
+      }
+
+      // We WERE able to retrieve a memory pointer from the shared system
+      // Send an ACK to the master, and enable auto-acks on the remaining.
+      else {
+    	  I2C1->CMD |= I2C_CMD_ACK;
+    	  I2C1->CTRL |= I2C_CTRL_AUTOACK;
+      }
+
+	  I2C_IntClear(I2C1, I2C_IFC_ADDR);
+      if (printfEnable) {puts("Address match non-repeat start");}
+      return; // Lets see if this helps speed things up.
+  }
+
+  /*
+   * Slave Receiver:
+   * The Master has sent data (0xB1)
+   * Load it into the Rx buffer and increment pointer
+   * RXDATA IF is cleared when the buffer is read.
+   */
+  else if (flags & I2C_IF_RXDATAV) {
+	  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
+      if (printfEnable) {puts("Data received");}
+      return;
+  }
 
   /*
    * Master has transmitted stop condition
