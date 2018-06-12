@@ -54,15 +54,22 @@
  * Connected together between two boards. Both of these wires were pulled-up by
  * a 2.7kOhm resistor connected to the 3.3V pin of ONE of the boards.
  *
+ ******************************************************************************
+ *
  * 6/1/18: The 2.7kOhm resistors have been exchanged for a pair of 330 Ohm Resistors
  * This enables the proper usage and testing with Fast+ Mode (1Mbit/s)
  * An oscilloscope was used for initial testing purposes to see if the
  * clock and data lines were being pulled low. These pins were grounded to the
  * GND pins on the same board that provides 3.3V.
  *
- **************************************************************************
- * WHATEVER YOU DO, DO NOT PULL-UP THE PINS USING THE 5V LINE ON THE BOARD.
- **************************************************************************
+ ******************************************************************************
+ *
+ * 6/12/18: The scope of this branch has changed to now utilizing the DMA
+ * controller for Tx and possibly Rx usage for the I2C module.
+ * Most of the work is based on the Silicon Labs Application Note for using the
+ * DMA controller, AN0013
+ * https://www.silabs.com/documents/public/application-notes/AN0013.pdf
+ * Specifically the code for using the DMA with I2C as a master tx.
  *
  ******************************************************************************/
 
@@ -80,10 +87,25 @@ uint8_t tempTxBuf0[] = "let go of my gecko?";
 uint8_t tempTxBuf1[] = "LET GO OF MY GECKO!";
 uint8_t tempRxBuf[20];
 
+/******************************************************************************
+ * @brief	Setup DMA Controller
+ *****************************************************************************/
+void setupDMA() {
+
+	/* Enabling clock to the DMA */
+	CMU_ClockEnable(cmuClock_DMA, true);
+
+
+
+}
+
 /**************************************************************************//**
  * @brief  Setup I2C
  *****************************************************************************/
-void setupI2C(void) {
+void setupI2C() {
+
+	/* Enabling clock to the I2C*/
+	CMU_ClockEnable(cmuClock_I2C1, true);
 
 	/*
 	* Changing the priority of I2C1 IRQ.
@@ -203,9 +225,6 @@ static void vI2CReceiveTask(void *rxQueueHandle) {
  * Main is called from __iar_program_start, see assembly startup file
  *****************************************************************************/
 int main(void) {
-
-	/* Enabling clock to the I2C*/
-	CMU_ClockEnable(cmuClock_I2C1, true);
   
 	// Use this to enable printfs.
 	SWO_SetupForPrint();
@@ -230,6 +249,9 @@ int main(void) {
 	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 1);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
+
+	/* Setting up DMA Controller */
+	setupDMA();
 
 	/* Setting up i2c */
 	setupI2C();

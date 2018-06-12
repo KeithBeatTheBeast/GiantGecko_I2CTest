@@ -162,4 +162,14 @@ static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
 
 static SharedMem_t		 i2cSharedMem;
 
+/*
+ * DMA Stuff goes here
+ */
+
+/* Channel Number for Tx */
+#define DMA_CHANNEL_I2C_TX 0
+
+/* Callback Structure */
+static DMA_CB_TypeDef dmaCB;
+
 #endif /* CSPI2C_EFM32_H_ */
