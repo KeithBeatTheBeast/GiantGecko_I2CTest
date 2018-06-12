@@ -87,6 +87,24 @@ uint8_t tempTxBuf0[] = "let go of my gecko?";
 uint8_t tempTxBuf1[] = "LET GO OF MY GECKO!";
 uint8_t tempRxBuf[20];
 
+/********************************************************************
+ * @brief Function called when DMA transfer is complete.
+ * Enables interrupts when doing a DMA read.
+ *******************************************************************/
+void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
+
+	/* Ignore unused parameters */
+	(void) primary;
+	(void) user;
+
+	// If we're on the right channel, and the DMA has dumped all data to the TXDATA
+	// buffer, then allow the I2C module to send a STOP once it is out of data.
+	// This setting is cleared in the MSTOP condition of the I2C IRQ.
+	if (channel == DMA_CHANNEL_I2C_TX) {
+		I2C1->CTRL |= I2C_CTRL_AUTOSE;
+	}
+}
+
 /******************************************************************************
  * @brief	Setup DMA Controller
  *****************************************************************************/
@@ -102,8 +120,14 @@ void setupDMA() {
 
 	/* Initializing the DMA */
 	dmaInit.hprot = 0;
-	dmaInit.controlBlock = dmaControlBlock;
-	DMA_Init(&dmaInit);
+	dmaInit.controlBlock = malloc(sizeof(DMA_DESCRIPTOR_TypeDef)); // Works only because I am using 1 descriptor
+	DMA_Init(&dmaInit); // TODO THIS FUNCTION HAS BEEN MODIFIED FOR LOCAL IMPLEMENTATION.
+
+	/* Setup call-back function */
+	dmaCB.cbFunc = i2cTransferComplete;
+	dmaCB.userPtr = NULL;
+
+
 }
 
 /**************************************************************************//**
@@ -355,6 +379,7 @@ void I2C1_IRQHandler(void) {
   if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  flags &= ~I2C_IF_SSTOP;
+	  I2C1->CTRL &= ~I2C_CTRL_AUTOSE;
 	  xSemaphoreGiveFromISR(busySem, NULL);
 	  if (printfEnable) {puts("Master Stop Detected");}
   }
