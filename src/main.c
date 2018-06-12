@@ -95,8 +95,15 @@ void setupDMA() {
 	/* Enabling clock to the DMA */
 	CMU_ClockEnable(cmuClock_DMA, true);
 
+	/* Initialization Struct, and the Tx Structs */
+	DMA_Init_TypeDef		dmaInit;
+	DMA_CfgChannel_TypeDef  txChannelConfig;
+	DMA_CfgDescr_TypeDef	txDescriptorConfig;
 
-
+	/* Initializing the DMA */
+	dmaInit.hprot = 0;
+	dmaInit.controlBlock = dmaControlBlock;
+	DMA_Init(&dmaInit);
 }
 
 /**************************************************************************//**
