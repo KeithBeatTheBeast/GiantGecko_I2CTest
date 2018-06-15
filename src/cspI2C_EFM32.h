@@ -62,6 +62,7 @@
 #define RX_INDEX_INIT					0	 // Rx Index start value/reset value
 #define ADD_BYTE_LIMIT					-1   // Used to determine whether or not we're at the end of Tx
 #define MAX_FRAME_SIZE					256  // Adjustable, assume worst case scenario
+#define NUM_DMA_CHANNELS				1	 // Number of DMA channels used.
 
 /* State Register Values Checked in ISR */
 #define MASTER_TRANS_ADDR_ACK			0x97 // Master Sent ADDR+W, ACK Received

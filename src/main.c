@@ -118,9 +118,15 @@ void setupDMA() {
 	DMA_CfgChannel_TypeDef  txChannelConfig;
 	DMA_CfgDescr_TypeDef	txDescriptorConfig;
 
-	/* Initializing the DMA */
+	/* Initializing the DMA
+	 * USAGE OF memalign(size_t alignment, size_t size) INSTEAD OF malloc(size):
+	 * The address of the DMA control block must be a multiple of it's size.
+	 * http://man7.org/linux/man-pages/man3/posix_memalign.3.html
+	 * We don't have access to posix_memalign, aligned_alloc, or valloc
+	 * So despite being "obsolete", it's still useful
+	 * */
 	dmaInit.hprot = 0;
-	dmaInit.controlBlock = malloc(sizeof(DMA_DESCRIPTOR_TypeDef)); // Works only because I am using 1 descriptor
+	dmaInit.controlBlock = memalign(sizeof(DMA_DESCRIPTOR_TypeDef), sizeof(DMA_DESCRIPTOR_TypeDef));
 	DMA_Init(&dmaInit); // TODO THIS FUNCTION HAS BEEN MODIFIED FOR LOCAL IMPLEMENTATION.
 
 	/* Setup call-back function */
@@ -221,8 +227,9 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		/* Initializing I2C transfer */
 		i2c_Tx.addr    = I2C_ADDRESS;           // TODO get address from LUT
 		i2c_Tx.rwBit   = I2C_WRITE;				// TODO hardcode to write.
-		if (c++ % 2 == 0) {i2c_Tx.txData  = tempTxBuf0;} // TODO temp, remove.
-		else {i2c_Tx.txData  = tempTxBuf1;}
+		//if (c++ % 2 == 0) {i2c_Tx.txData  = tempTxBuf0;} // TODO temp, remove.
+		//else {i2c_Tx.txData  = tempTxBuf1;}
+		i2c_Tx.txData = tempTxBuf0;
 		i2c_Tx.len     = 20;         			// TODO need to somehow get size of memory
 		i2c_Tx.txIndex = TX_INDEX_INIT;         // Reset index to -1 always
 		i2c_Tx.transmissionError = NO_TRANS_ERR;// Set error flag to zero.
@@ -254,7 +261,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			printf("Error: %x\n", i2c_Tx.transmissionError);
 			vTaskDelay(portTICK_PERIOD_MS);
 		}
-		vTaskDelay(portTICK_PERIOD_MS * 0.1);
+		vTaskDelay(portTICK_PERIOD_MS * 1);
 	}
 }
 
