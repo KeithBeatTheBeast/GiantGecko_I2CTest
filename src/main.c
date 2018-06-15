@@ -254,7 +254,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			printf("Error: %x\n", i2c_Tx.transmissionError);
 			vTaskDelay(portTICK_PERIOD_MS);
 		}
-		vTaskDelay(portTICK_PERIOD_MS * 0.25);
+		vTaskDelay(portTICK_PERIOD_MS * 0.1);
 	}
 }
 
@@ -279,7 +279,7 @@ int main(void) {
   
 	// Use this to enable printfs.
 	SWO_SetupForPrint();
-
+	puts("I am here.");
 	// Tests TODO more tests
 //	runAllSharedMemTests();
 
@@ -310,24 +310,13 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	//xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
 
 	// Should never get here
 	return 0;
-}
-
-/*
- * @brief Checks conditions that the BUSHOLD if-else looks for
- * These are the states in the I2C State register that will enter there.
- */
-static inline bool checkBusHoldStates(int state){
-	return (state & (MASTER_TRANS_ADDR_NACK | \
-			MASTER_TRANS_DATA_NACK | \
-			SLAVE_RECIV_ADDR_ACK | \
-			SLAVE_RECIV_DATA_ACK)); // Removeed MASTER_TRANS_ADDR_ACK and MASTER_TRANS_DATA_ACK
 }
 
 static inline bool checkFlags(int flag) {
@@ -344,14 +333,13 @@ static inline bool checkFlags(int flag) {
 void I2C1_IRQHandler(void) {
    
   int flags = I2C1->IF;
-  int state = I2C1->STATE;
 
   /*
    * Conditions that may, but are not guaranteed to, cause a BUSHOLD condition
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
    */
-  if (checkFlags(flags)) {// || checkBusHoldStates(state)) {
+  if (checkFlags(flags)) {
 
 	  //if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
@@ -383,21 +371,21 @@ void I2C1_IRQHandler(void) {
 	  else if (flags & I2C_IF_ADDR) {//|| state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
-	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
 	      // We were unable to allocate memory from the shared memory system
 	      // Report error to task, issue an abort and a NACK
-	      if (i2c_Rx == pdFALSE) {
-	    	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
-	    	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
-	      }
+	   //   if (i2c_Rx == pdFALSE) {
+	    //	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
+	    //	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
+	     // }
 
 	      // We WERE able to retrieve a memory pointer from the shared system
 	      // Send an ACK to the master, and enable auto-acks on the remaining.
-	      else {
-	    	  I2C1->CMD |= I2C_CMD_ACK;
-	    	  I2C1->CTRL |= I2C_CTRL_AUTOACK;
-	      }
+	     // else {
+	      I2C1->CMD |= I2C_CMD_ACK;
+	      I2C1->CTRL |= I2C_CTRL_AUTOACK;
+	    //  }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      //if (printfEnable) {puts("Address match non-repeat start");}
@@ -410,7 +398,8 @@ void I2C1_IRQHandler(void) {
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
 	  else if (flags & I2C_IF_RXDATAV) {// || state == SLAVE_RECIV_DATA_ACK) {
-		  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -452,15 +441,16 @@ void I2C1_IRQHandler(void) {
 
 		  // We're done the transmission, so disable auto-acks.
 		  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
-			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
-			 xSharedMemPut(i2cSharedMem, i2c_Rx);
-		  }
+//		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
+//			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
+//			 xSharedMemPut(i2cSharedMem, i2c_Rx);
+//		  }
+//
+//		  if (xQueueSendFromISR(rxIndexQueue, &i2c_rxBufferIndex, NULL) == errQUEUE_FULL) {
+//			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
+//		  }
 
-		  if (xQueueSendFromISR(rxIndexQueue, &i2c_rxBufferIndex, NULL) == errQUEUE_FULL) {
-			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
-		  }
-
+		  printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
