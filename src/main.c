@@ -254,7 +254,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			printf("Error: %x\n", i2c_Tx.transmissionError);
 			vTaskDelay(portTICK_PERIOD_MS);
 		}
-		vTaskDelay(portTICK_PERIOD_MS);
+		vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
@@ -351,19 +351,9 @@ void I2C1_IRQHandler(void) {
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
    */
-  if (checkBusHoldStates(state) || checkFlags(flags)) {
+  if (checkFlags(flags)) {// || checkBusHoldStates(state)) {
 
-	  if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
-
-	  /*
-	   * Master Transmitter BUSHOLD Conditionals
-	   * Table 16.5, Page 426-427 of the EFM32GG Reference Manual
-	   * This part of the sub-conditionals handles states
-	   * 0x97, 0x9F, 0xD7 and 0xDF
-	   * State 0x57 (Start Sent, but no Address in TX) is NOT
-	   * handled here - because the address is loaded into the TX buffer
-	   * In the performI2C function before the start condition is requested.
-	   */
+	  //if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
 
 	  /*
 	   * Master Transmitter:
@@ -372,9 +362,8 @@ void I2C1_IRQHandler(void) {
 	   * has been sent and a NACK has been received
 	   * Do not allow TXBL to trigger the ISR, report "something bad happened".
 	   */
-	  if ((flags & I2C_IF_NACK) || state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
+	  if (flags & I2C_IF_NACK) {// || state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
-		  //I2C_IntDisable(I2C1, I2C_IF_TXBL);
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
@@ -383,8 +372,7 @@ void I2C1_IRQHandler(void) {
 	   * Slave Receiver BUSHOLD Conditionals
 	   * See Table 16.10, page 433 of the EFM32GG Reference Manual
 	   * All States that would trigger a BUSHOLD are accounted for.
-	   */
-	  /*
+	   *
 	   * Slave Receiver:
 	   * Start Condition on the line has been detected
 	   * Automatic Address Matching has determined a Master is trying to talk to this device
@@ -392,7 +380,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  if ((flags & I2C_IF_ADDR) || state == SLAVE_RECIV_ADDR_ACK) {
+	  else if (flags & I2C_IF_ADDR) {//|| state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
 	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
@@ -412,7 +400,7 @@ void I2C1_IRQHandler(void) {
 	      }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
-	      if (printfEnable) {puts("Address match non-repeat start");}
+	      //if (printfEnable) {puts("Address match non-repeat start");}
 	  }
 
 	  /*
@@ -421,22 +409,21 @@ void I2C1_IRQHandler(void) {
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
-	  else if ((flags & I2C_IF_RXDATAV) || state == SLAVE_RECIV_DATA_ACK) {
-		  //tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
+	  else if (flags & I2C_IF_RXDATAV) {// || state == SLAVE_RECIV_DATA_ACK) {
 		  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
 	  if (flags & I2C_IF_BUSHOLD) {
 		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
-	  }
 
-	  if (I2C1->IF & I2C_IF_BUSHOLD) {
-		  I2C1->CMD |= I2C_CMD_ABORT;
-		  i2c_Tx.transmissionError |= E_ABORT_BUSHOLD;
-		  xSemaphoreGiveFromISR(busySem, NULL);
+		  // Double check for Bushold and if there is one, abort.
+		  if (I2C1->IF & I2C_IF_BUSHOLD) {
+			  I2C1->CMD |= I2C_CMD_ABORT;
+			  i2c_Tx.transmissionError |= E_ABORT_BUSHOLD;
+			  xSemaphoreGiveFromISR(busySem, NULL);
+		  }
 	  }
-	  return;
   }
 
   /*
