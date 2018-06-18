@@ -227,9 +227,8 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		/* Initializing I2C transfer */
 		i2c_Tx.addr    = I2C_ADDRESS;           // TODO get address from LUT
 		i2c_Tx.rwBit   = I2C_WRITE;				// TODO hardcode to write.
-		//if (c++ % 2 == 0) {i2c_Tx.txData  = tempTxBuf0;} // TODO temp, remove.
-		//else {i2c_Tx.txData  = tempTxBuf1;}
-		i2c_Tx.txData = tempTxBuf0;
+		if (c++ % 2 == 0) {i2c_Tx.txData  = tempTxBuf0;} // TODO temp, remove.
+		else {i2c_Tx.txData  = tempTxBuf1;}
 		i2c_Tx.len     = 20;         			// TODO need to somehow get size of memory
 		i2c_Tx.txIndex = TX_INDEX_INIT;         // Reset index to -1 always
 		i2c_Tx.transmissionError = NO_TRANS_ERR;// Set error flag to zero.
@@ -317,7 +316,7 @@ int main(void) {
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	//xTaskCreate(vThrowI2CErrors, (const char *) "Throw Exceptions", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
