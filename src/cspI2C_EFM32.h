@@ -93,7 +93,6 @@
 #define i2c_IEN_flags (I2C_IEN_ADDR | \
 					  I2C_IEN_RXDATAV | \
 					  I2C_IEN_SSTOP | \
-					  I2C_IEN_BUSHOLD | \
 					  I2C_IEN_RSTART | \
 					  I2C_IEN_ARBLOST | \
 					  I2C_IEN_NACK | \
