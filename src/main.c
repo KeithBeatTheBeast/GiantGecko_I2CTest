@@ -105,7 +105,6 @@ void setupI2C(void) {
 			i2cClockHLRAsymetric \
 		};
 
-
 	/* Using PC4 (SDA) and PC5 (SCL) */
 	GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
 	GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
@@ -122,6 +121,7 @@ void setupI2C(void) {
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOSN | \
+			I2C_CTRL_AUTOACK | \
 		  	I2C_CTRL_BITO_160PCC | \
 		  	I2C_CTRL_GIBITO;
 
@@ -214,7 +214,7 @@ int main(void) {
 //	runAllSharedMemTests();
 
 	// Create the semaphore and report on it.
-	busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initalizer
+	busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initializer
 	if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
 	else { puts("Creation of Busy Semaphore Successful!");}
 
@@ -384,21 +384,21 @@ void I2C1_IRQHandler(void) {
 	  if ((flags & I2C_IF_ADDR) || state == SLAVE_RECIV_ADDR_ACK) {
 	      I2C1->RXDATA;
 
-	      i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+	      //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
 	      // We were unable to allocate memory from the shared memory system
 	      // Report error to task, issue an abort and a NACK
-	      if (i2c_Rx != pdTRUE) {
-	    	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
-	    	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
-	      }
+	      //if (i2c_Rx != pdTRUE) {
+	    //	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
+	    //	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
+	     // }
 
 	      // We WERE able to retrieve a memory pointer from the shared system
 	      // Send an ACK to the master, and enable auto-acks on the remaining.
-	      else {
-	    	  I2C1->CMD |= I2C_CMD_ACK;
-	    	  I2C1->CTRL |= I2C_CTRL_AUTOACK;
-	      }
+	     // else {
+	    //	  I2C1->CMD |= I2C_CMD_ACK;
+	   // 	  I2C1->CTRL |= I2C_CTRL_AUTOACK;
+	     // }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	      if (printfEnable) {puts("Address match non-repeat start");}
@@ -411,8 +411,8 @@ void I2C1_IRQHandler(void) {
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
 	  else if ((flags & I2C_IF_RXDATAV) || state == SLAVE_RECIV_DATA_ACK) {
-		  //tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
-		  i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
+		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}
 	  }
 
@@ -432,16 +432,16 @@ void I2C1_IRQHandler(void) {
 	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
 
 		  // We're done the transmission, so disable auto-acks.
-		  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
-			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
-			 xSharedMemPut(i2cSharedMem, i2c_Rx);
-		  }
+		  //I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
+		  //if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) == errQUEUE_FULL) {
+		//	 i2c_Tx.transmissionError |= F_QUEUE_ERR;
+		//	 xSharedMemPut(i2cSharedMem, i2c_Rx);
+		 // }
 
-		  if (xQueueSendFromISR(rxIndexQueue, &i2c_rxBufferIndex, NULL) == errQUEUE_FULL) {
-			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
-		  }
-
+		 // if (xQueueSendFromISR(rxIndexQueue, &i2c_rxBufferIndex, NULL) == errQUEUE_FULL) {
+		//	  i2c_Tx.transmissionError |= F_QUEUE_ERR;
+		 // }
+		  printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
@@ -467,7 +467,7 @@ void I2C1_IRQHandler(void) {
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
-	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
+	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); TODO remove
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 }
