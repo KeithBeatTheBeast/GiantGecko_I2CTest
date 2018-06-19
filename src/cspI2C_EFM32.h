@@ -159,7 +159,7 @@ static int16_t i2c_rxBufferIndex;
 static SemaphoreHandle_t busySem; // Tx semaphore
 static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
 
-
+// Shared memory handle
 static SharedMem_t		 i2cSharedMem;
 
 /*
@@ -168,6 +168,7 @@ static SharedMem_t		 i2cSharedMem;
 
 /* Channel Number for Tx */
 #define DMA_CHANNEL_I2C_TX 0
+#define DMA_ENABLE_I2C_TX  DMA_CHENS_CH0ENS
 
 /* Callback Structure */
 static DMA_CB_TypeDef dmaCB;
