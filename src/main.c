@@ -250,7 +250,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			printf("Error: %x\n", i2c_Tx.transmissionError);
 			vTaskDelay(portTICK_PERIOD_MS * 0.25);
 		}
-		//vTaskDelay(portTICK_PERIOD_MS * 0.25);
+		vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
