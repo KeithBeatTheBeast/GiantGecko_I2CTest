@@ -45,6 +45,7 @@
 #include "queue.h"
 
 #include "SharedMemory.h"
+#include "cspDMA_EFM32.h"
 
 // Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
 #include "makePrintfWork.h" // TODO remove from final version
@@ -62,15 +63,6 @@
 #define RX_INDEX_INIT					0	 // Rx Index start value/reset value
 #define ADD_BYTE_LIMIT					-1   // Used to determine whether or not we're at the end of Tx
 #define MAX_FRAME_SIZE					256  // Adjustable, assume worst case scenario
-#define NUM_DMA_CHANNELS				1	 // Number of DMA channels used.
-
-/* State Register Values Checked in ISR */
-#define MASTER_TRANS_ADDR_ACK			0x97 // Master Sent ADDR+W, ACK Received
-#define MASTER_TRANS_ADDR_NACK			0x9F // Master Sent ADDR+W, NACK Received
-#define MASTER_TRANS_DATA_ACK			0xD7 // Master Sent DATA, ACK Received
-#define MASTER_TRANS_DATA_NACK			0xDF // Master Sent DATA, NACK Received
-#define SLAVE_RECIV_ADDR_ACK			0x71 // Slave has received ADDR+W
-#define SLAVE_RECIV_DATA_ACK			0xB1 // Slave has received DATA
 
 /* cspI2CTransfer_t Error codes for transmissionError field */
 #define NO_TRANS_ERR					0x00
@@ -129,13 +121,7 @@
  * rwBit: Usually 0 for writes only
  * len: Length of txData in bytes, provided by CSP
  * transmissionError: Error byte, bits represent potential errors, and there can be multiple errors
- * 	0 - All is well
- * 	1 - NACK
- * 	2 - BITO
- * 	4 - CLTO
- * 	8 - BUSERR
- * 	16 - ARBLOST
- * 	32 - The Semaphore timed out
+ * See above for the values
  */
 typedef struct {
 	uint8_t *txData;           // Pointer to the data.
@@ -161,16 +147,5 @@ static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
 
 // Shared memory handle
 static SharedMem_t		 i2cSharedMem;
-
-/*
- * DMA Stuff goes here
- */
-
-/* Channel Number for Tx */
-#define DMA_CHANNEL_I2C_TX 0
-#define DMA_ENABLE_I2C_TX  DMA_CHENS_CH0ENS
-
-/* Callback Structure */
-static DMA_CB_TypeDef dmaCB;
 
 #endif /* CSPI2C_EFM32_H_ */

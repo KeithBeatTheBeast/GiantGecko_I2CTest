@@ -114,20 +114,10 @@ void setupDMA() {
 	CMU_ClockEnable(cmuClock_DMA, true);
 
 	/* Initialization Struct, and the Tx Structs */
-	DMA_Init_TypeDef		dmaInit;
 	DMA_CfgChannel_TypeDef  txChannelConfig;
 	DMA_CfgDescr_TypeDef	txDescriptorConfig;
 
-	/* Initializing the DMA
-	 * USAGE OF memalign(size_t alignment, size_t size) INSTEAD OF malloc(size):
-	 * The address of the DMA control block must be a multiple of it's size.
-	 * http://man7.org/linux/man-pages/man3/posix_memalign.3.html
-	 * We don't have access to posix_memalign, aligned_alloc, or valloc
-	 * So despite being "obsolete", it's still useful
-	 * */
-	dmaInit.hprot = 0;
-	dmaInit.controlBlock = memalign(sizeof(DMA_DESCRIPTOR_TypeDef), sizeof(DMA_DESCRIPTOR_TypeDef));
-	DMA_Init(&dmaInit); // TODO THIS FUNCTION HAS BEEN MODIFIED FOR LOCAL IMPLEMENTATION.
+	cspDMA_Init(CSP_HPROT);
 
 	/* Setup call-back function */
 	dmaCB.cbFunc  = i2cTransferComplete;
@@ -260,7 +250,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			printf("Error: %x\n", i2c_Tx.transmissionError);
 			vTaskDelay(portTICK_PERIOD_MS * 0.25);
 		}
-		vTaskDelay(portTICK_PERIOD_MS * 0.25);
+		//vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
@@ -285,7 +275,6 @@ int main(void) {
   
 	// Use this to enable printfs.
 	SWO_SetupForPrint();
-	puts("I am here.");
 	// Tests TODO more tests
 //	runAllSharedMemTests();
 
@@ -329,7 +318,7 @@ static inline bool checkFlags(int flag) {
 	return (flag & (I2C_IF_BUSHOLD | \
 			I2C_IF_NACK | \
 			I2C_IF_ADDR | \
-			I2C_IF_RXDATAV)); // Removed TXBL and ACK
+			I2C_IF_RXDATAV));
 }
 
 /**************************************************************************//**
@@ -347,7 +336,7 @@ void I2C1_IRQHandler(void) {
    */
   if (checkFlags(flags)) {
 
-	  //if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD"); printf("State: %x\n", state); }
+	  if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD");}
 
 	  /*
 	   * Master Transmitter:
@@ -356,7 +345,7 @@ void I2C1_IRQHandler(void) {
 	   * has been sent and a NACK has been received
 	   * Do not allow TXBL to trigger the ISR, report "something bad happened".
 	   */
-	  if (flags & I2C_IF_NACK) {// || state == MASTER_TRANS_ADDR_NACK || state == MASTER_TRANS_DATA_NACK) {
+	  if (flags & I2C_IF_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 		  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
@@ -375,7 +364,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  else if (flags & I2C_IF_ADDR) {//|| state == SLAVE_RECIV_ADDR_ACK) {
+	  else if (flags & I2C_IF_ADDR) {
 	      I2C1->RXDATA;
 
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
@@ -404,7 +393,7 @@ void I2C1_IRQHandler(void) {
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
-	  else if (flags & I2C_IF_RXDATAV) {// || state == SLAVE_RECIV_DATA_ACK) {
+	  else if (flags & I2C_IF_RXDATAV) {
 		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
 		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
 	      if (printfEnable) {puts("Data received");}

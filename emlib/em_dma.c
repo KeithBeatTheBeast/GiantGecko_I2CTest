@@ -993,15 +993,13 @@ void DMA_Init(DMA_Init_TypeDef *init)
   EFM_ASSERT(init);
 
   /* Make sure control block is properly aligned */
-//#if (DMA_CHAN_COUNT <= 4)
-//  EFM_ASSERT(!((uint32_t)(init->controlBlock) & (128 - 1)));
-//#elif (DMA_CHAN_COUNT <= 8) || (DMA_CHAN_COUNT <= 12)
-//  EFM_ASSERT(!((uint32_t)(init->controlBlock) & (256 - 1)));
-//#else
-//#error "Unsupported DMA channel count (em_dma.c)."
-//#endif
-
-  EFM_ASSERT(!((uint32_t)(init->controlBlock) & (16 - 1)));
+#if (DMA_CHAN_COUNT <= 4)
+  EFM_ASSERT(!((uint32_t)(init->controlBlock) & (128 - 1)));
+#elif (DMA_CHAN_COUNT <= 8) || (DMA_CHAN_COUNT <= 12)
+  EFM_ASSERT(!((uint32_t)(init->controlBlock) & (256 - 1)));
+#else
+#error "Unsupported DMA channel count (em_dma.c)."
+#endif
 
   /* Make sure DMA clock is enabled prior to accessing DMA module */
   CMU_ClockEnable(cmuClock_DMA, true);
