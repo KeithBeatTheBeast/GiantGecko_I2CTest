@@ -66,6 +66,22 @@ static DMA_CB_TypeDef 					dmaCB;
  ******************************************************************************/
 void cspDMA_Init(uint8_t hprot) {
 
+	/*
+	 * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	 * THIS IS A VERY IMPORTANT CODE BLOCK - BREAK IT AND THE DMA. WILL. NOT. WORK.
+	 * The base address for the DMA controller's descriptors MUST be a multiple of the total size
+	 * of the memory allocated.
+	 * There are some ways to achieve this end, one way is to use a specialized malloc, memalign
+	 * https://linux.die.net/man/3/memalign
+	 * However, it is obsolete. Also our faculty advisor said this is a no-no.
+	 *
+	 * Another way is to allocate more than you need, but enough so that you can be guaranteed to find an appropriate address
+	 * https://stackoverflow.com/questions/227897/how-to-allocate-aligned-memory-only-using-the-standard-library
+	 * I will let the most popular answer explain how it works.
+	 *
+	 * I tried using statically allocated blocks at compile time, it did NOT work!
+	 *
+	 */
 	uint16_t align = NUM_DMA_CHANNELS * DESCRIPTOR_SIZE;
 	uintptr_t mask = ~(uintptr_t)(align - 1);
 	void *cbrAddr = pvPortMalloc(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF);
