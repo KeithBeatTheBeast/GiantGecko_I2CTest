@@ -74,7 +74,7 @@
 #define TIMEOUT_ERR						0x20
 #define E_QUEUE_ERR						0x40
 #define F_QUEUE_ERR						0x80
-#define E_ABORT_BUSHOLD					0x100
+#define ABORT_BUSHOLD					0x100
 
 /*
  * ISR Interrupt Enable Lines
@@ -91,7 +91,8 @@
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_CLTO | \
 					  I2C_IEN_BUSERR | \
-					  I2C_IEN_BITO) // Removed ACK IEN
+					  I2C_IEN_BITO | \
+					  I2C_IEN_BUSHOLD)
 
 /*
  * ISR Interrupt Flag Clear

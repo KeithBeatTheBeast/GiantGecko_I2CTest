@@ -124,7 +124,7 @@ void setupDMA() {
 	dmaCB.userPtr = NULL;
 
 	/* Setting up TX channel */
-	txChannelConfig.highPri   = false;
+	txChannelConfig.highPri   = true;
 	txChannelConfig.enableInt = true;
 	txChannelConfig.select    = DMAREQ_I2C1_TXBL;
 	txChannelConfig.cb        = &dmaCB;
@@ -246,9 +246,9 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		}
 
 		// Error happened. TODO send to upper layer
-		if (i2c_Tx.transmissionError > 1) {
-			printf("Error: %x\n", i2c_Tx.transmissionError);
-			vTaskDelay(portTICK_PERIOD_MS * 0.25);
+		if (i2c_Tx.transmissionError > 0) {
+			if (i2c_Tx.transmissionError > 1) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
+			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
 		vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
@@ -364,7 +364,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  else if (flags & I2C_IF_ADDR) {
+	  else if (flags & I2C_IF_ADDR ) {
 	      I2C1->RXDATA;
 
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
@@ -399,16 +399,15 @@ void I2C1_IRQHandler(void) {
 	      if (printfEnable) {puts("Data received");}
 	  }
 
-	  if (flags & I2C_IF_BUSHOLD) {
-		  I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
-
-		  // Double check for Bushold and if there is one, abort.
-		  if (I2C1->IF & I2C_IF_BUSHOLD) {
-			  I2C1->CMD |= I2C_CMD_ABORT;
-			  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
-			  i2c_Tx.transmissionError |= E_ABORT_BUSHOLD;
-			 // xSemaphoreGiveFromISR(busySem, NULL);
+	  if (I2C1->IF & I2C_IF_BUSHOLD) {
+		  if (I2C1->STATE == 0xD7) {
+			  I2C1->CMD |= I2C_CMD_STOP;
 		  }
+		  else {
+			  I2C1->RXDATA;
+		  }
+		  I2C_IntClear(I2C1, i2c_IFC_flags);
+		  puts("Here normally or not?");
 	  }
   }
 
@@ -447,7 +446,7 @@ void I2C1_IRQHandler(void) {
 //			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
 //		  }
 
-		  printf("%s\n", tempRxBuf);
+		 // printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
