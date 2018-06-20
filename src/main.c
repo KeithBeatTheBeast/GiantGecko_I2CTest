@@ -185,6 +185,7 @@ void setupI2C() {
 			I2C_CTRL_AUTOSN | \
 			I2C_CTRL_AUTOACK | \
 		  	I2C_CTRL_BITO_160PCC | \
+			I2C_CTRL_CLTO_1024PPC | \
 		  	I2C_CTRL_GIBITO;
 
 	// Removed: I2C_CTRL_AUTOACK |

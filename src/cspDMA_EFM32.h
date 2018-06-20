@@ -18,6 +18,7 @@
 #define CSPDMA_EFM32_H_
 
 #include "em_dma.h"
+#include "em_cmu.h"
 
 /*
  * NUM_DMA_CHANNELS - Max 12 primary, 12 alternate (which I'm not touching)
@@ -64,49 +65,6 @@ static DMA_CB_TypeDef 					dmaCB;
  * @param[in] init
  *   Pointer to a structure containing DMA init information.
  ******************************************************************************/
-void cspDMA_Init(uint8_t hprot) {
-
-	/*
-	 * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	 * THIS IS A VERY IMPORTANT CODE BLOCK - BREAK IT AND THE DMA. WILL. NOT. WORK.
-	 * The base address for the DMA controller's descriptors MUST be a multiple of the total size
-	 * of the memory allocated.
-	 * There are some ways to achieve this end, one way is to use a specialized malloc, memalign
-	 * https://linux.die.net/man/3/memalign
-	 * However, it is obsolete. Also our faculty advisor said this is a no-no.
-	 *
-	 * Another way is to allocate more than you need, but enough so that you can be guaranteed to find an appropriate address
-	 * https://stackoverflow.com/questions/227897/how-to-allocate-aligned-memory-only-using-the-standard-library
-	 * I will let the most popular answer explain how it works.
-	 *
-	 * I tried using statically allocated blocks at compile time, it did NOT work!
-	 *
-	 */
-	uint16_t align = NUM_DMA_CHANNELS * DESCRIPTOR_SIZE;
-	uintptr_t mask = ~(uintptr_t)(align - 1);
-	void *cbrAddr = pvPortMalloc(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF);
-
-	/* Set pointer to control block, notice that this ptr must have been */
-	/* properly aligned, according to requirements defined in the reference */
-	/* manual. */
-	DMA->CTRLBASE = (uint32_t)(((uintptr_t)cbrAddr + align - 1) & mask);
-
-	/* Make sure DMA clock is enabled prior to accessing DMA module */
-	CMU_ClockEnable(cmuClock_DMA, true);
-
-	/* Make sure DMA controller is set to a known reset state */
-	DMA_Reset();
-
-	/* Clear/enable DMA interrupts */
-	NVIC_ClearPendingIRQ(DMA_IRQn);
-	NVIC_EnableIRQ(DMA_IRQn);
-
-	/* Enable bus error interrupt */
-	DMA->IEN = DMA_IEN_ERR;
-
-		/* Configure and enable the DMA controller */
-	DMA->CONFIG = (hprot << _DMA_CONFIG_CHPROT_SHIFT)
-                | DMA_CONFIG_EN;
-}
+void cspDMA_Init(uint8_t hprot);
 
 #endif /* CSPDMA_EFM32_H_ */
