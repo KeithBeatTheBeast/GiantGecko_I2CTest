@@ -110,9 +110,6 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
  *****************************************************************************/
 void setupDMA() {
 
-	/* Enabling clock to the DMA */
-	CMU_ClockEnable(cmuClock_DMA, true);
-
 	/* Initialization Struct, and the Tx Structs */
 	DMA_CfgChannel_TypeDef  txChannelConfig;
 	DMA_CfgDescr_TypeDef	txDescriptorConfig;

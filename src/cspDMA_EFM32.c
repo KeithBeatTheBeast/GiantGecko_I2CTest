@@ -17,7 +17,7 @@
 #include "cspDMA_EFM32.h"
 
 // Descriptor memory space do not do anything
-uint8_t cbrAddr[NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF];
+//uint8_t cbrAddr[NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF];
 
 void cspDMA_Init(uint8_t hprot) {
 	/*
@@ -36,7 +36,7 @@ void cspDMA_Init(uint8_t hprot) {
 	 */
 	uint16_t align = NUM_DMA_CHANNELS * DESCRIPTOR_SIZE;
 	uintptr_t mask = ~(uintptr_t)(align - 1);
-	//void *cbrAddr = pvPortMalloc(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF);
+	void *cbrAddr = pvPortMalloc(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF);
 
 	/* Set pointer to control block, notice that this ptr must have been */
 	/* properly aligned, according to requirements defined in the reference */
