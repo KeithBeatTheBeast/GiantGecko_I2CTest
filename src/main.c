@@ -346,7 +346,6 @@ void I2C1_IRQHandler(void) {
 	  if (flags & I2C_IF_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
-		  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
 
@@ -398,12 +397,13 @@ void I2C1_IRQHandler(void) {
 	  }
 
 	  if (I2C1->IF & I2C_IF_BUSHOLD) {
-		  if (I2C1->STATE == 0xD7) {
-			  I2C1->CMD |= I2C_CMD_STOP;
-		  }
-		  else {
-			  I2C1->RXDATA;
-		  }
+		  I2C1->CMD |= I2C_CMD_ABORT;
+//		  if (I2C1->STATE == 0xD7) {
+	//		  I2C1->CMD |= I2C_CMD_STOP;
+		//  }
+		//  else {
+	//		  I2C1->RXDATA;
+	//	  }
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 		  puts("Here normally or not?");
 	  }
@@ -468,7 +468,6 @@ void I2C1_IRQHandler(void) {
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
-	  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
