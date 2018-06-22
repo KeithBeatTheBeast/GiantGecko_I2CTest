@@ -17,9 +17,23 @@
 #include "cspDMA_EFM32.h"
 
 // Descriptor memory space do not do anything
-//uint8_t cbrAddr[NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF];
+uint8_t cbrAddr[NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF];
 
 void cspDMA_Init(uint8_t hprot) {
+
+	/* Make sure DMA clock is enabled prior to accessing DMA module */
+	CMU_ClockEnable(cmuClock_DMA, true);
+
+	/* Make sure DMA controller is set to a known reset state */
+	DMA_Reset();
+
+	/* Clear/enable DMA interrupts */
+	NVIC_ClearPendingIRQ(DMA_IRQn);
+	NVIC_EnableIRQ(DMA_IRQn);
+
+	/* Enable bus error interrupt */
+	DMA->IEN = DMA_IEN_ERR;
+
 	/*
 	 * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 	 * THIS IS A VERY IMPORTANT CODE BLOCK - BREAK IT AND THE DMA. WILL. NOT. WORK.
@@ -36,29 +50,17 @@ void cspDMA_Init(uint8_t hprot) {
 	 */
 	uint16_t align = NUM_DMA_CHANNELS * DESCRIPTOR_SIZE;
 	uintptr_t mask = ~(uintptr_t)(align - 1);
-	void *cbrAddr = pvPortMalloc(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF);
+	//void *cbrAddr = pvPortMalloc(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE * ADDR_SPACE_SPARE_COEF);
 
 	/* Set pointer to control block, notice that this ptr must have been */
 	/* properly aligned, according to requirements defined in the reference */
 	/* manual. */
-	DMA->CTRLBASE = (uint32_t)(((uintptr_t)cbrAddr + align - 1) & mask);
+	DMA->CTRLBASE = (((uintptr_t)cbrAddr + align - 1) & mask);
+	printf("%x\n", DMA->CTRLBASE);
 
 	/* END OF VERY IMPORTANT CODE BLOCK THE REST IS COPY/PASTA FROM SILICON LABS! */
 
-	/* Make sure DMA clock is enabled prior to accessing DMA module */
-	CMU_ClockEnable(cmuClock_DMA, true);
-
-	/* Make sure DMA controller is set to a known reset state */
-	DMA_Reset();
-
-	/* Clear/enable DMA interrupts */
-	NVIC_ClearPendingIRQ(DMA_IRQn);
-	NVIC_EnableIRQ(DMA_IRQn);
-
-	/* Enable bus error interrupt */
-	DMA->IEN = DMA_IEN_ERR;
-
-		/* Configure and enable the DMA controller */
+	/* Configure and enable the DMA controller */
 	DMA->CONFIG = (hprot << _DMA_CONFIG_CHPROT_SHIFT)
                 | DMA_CONFIG_EN;
 }

@@ -30,7 +30,7 @@
  * 	rather than use a function like memalign
  * controlBlock - Array used. Will be aligned on init.
  */
-#define NUM_DMA_CHANNELS				1
+#define NUM_DMA_CHANNELS				16
 #define DESCRIPTOR_SIZE					16
 #define ADDR_SPACE_SPARE_COEF			2
 #define CSP_HPROT						0
