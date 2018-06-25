@@ -181,7 +181,7 @@ void setupI2C() {
 			I2C_CTRL_CLTO_1024PPC | \
 		  	I2C_CTRL_GIBITO;
 
-	// Removed: I2C_CTRL_AUTOACK |
+	// Only accept transmissions if it is directly talking to me.
 	I2C1->SADDRMASK |= 0x7F;
 
 	// Set Rx index to zero.
@@ -242,6 +242,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// Error happened. TODO send to upper layer
 		if (i2c_Tx.transmissionError > 0) {
 			if (i2c_Tx.transmissionError > 1) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
+			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
 		//vTaskDelay(portTICK_PERIOD_MS * 0.25);
@@ -330,23 +331,8 @@ void I2C1_IRQHandler(void) {
    */
   if (checkFlags(flags)) {
 
-	  if (printfEnable & (flags & I2C_IF_BUSHOLD)) { puts("BUSHOLD");}
-
 	  /*
-	   * Master Transmitter:
-	   * ADDR+W (0x9F) or
-	   * DATA (0xDF)
-	   * has been sent and a NACK has been received
-	   * Do not allow TXBL to trigger the ISR, report "something bad happened".
-	   */
-	  if (flags & I2C_IF_NACK) {
-		  i2c_Tx.transmissionError |= NACK_ERR;
-		  I2C_IntClear(I2C1, i2c_IFC_flags);
-		  xSemaphoreGiveFromISR(busySem, NULL);
-	  }
-
-	  /*
-	   * Slave Receiver BUSHOLD Conditionals
+	   * Slave Receiver Conditionals
 	   * See Table 16.10, page 433 of the EFM32GG Reference Manual
 	   * All States that would trigger a BUSHOLD are accounted for.
 	   *
@@ -357,7 +343,7 @@ void I2C1_IRQHandler(void) {
 	   * Basically the same code from Silicon Labs
 	   * Read the Rx buffer
 	   */
-	  else if (flags & I2C_IF_ADDR ) {
+	  if (flags & I2C_IF_ADDR ) {
 	      I2C1->RXDATA;
 
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
@@ -377,7 +363,7 @@ void I2C1_IRQHandler(void) {
 	    //  }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
-	      //if (printfEnable) {puts("Address match non-repeat start");}
+	      if (printfEnable) {puts("Address match");}
 	  }
 
 	  /*
@@ -392,16 +378,27 @@ void I2C1_IRQHandler(void) {
 	      if (printfEnable) {puts("Data received");}
 	  }
 
-	  if (flags & I2C_IF_BUSHOLD) {
-	  	I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+	  /*
+	   * Master Transmitter:
+	   * ADDR+W (0x9F) or
+	   * DATA (0xDF)
+	   * has been sent and a NACK has been received
+	   */
+	  if (flags & I2C_IF_NACK) {
+		  i2c_Tx.transmissionError |= NACK_ERR;
+		  if (printfEnable) {printf("NACK, IF: %x\n", I2C1->IF); }
+		  I2C_IntClear(I2C1, i2c_IFC_flags);
+		  I2C1->CMD |= I2C_CMD_ABORT;
+		  //xSemaphoreGiveFromISR(busySem, NULL);
+	  }
 
-	  	// Double check for Bushold and if there is one, abort.
-	  	if (I2C1->IF & I2C_IF_BUSHOLD) {
-	  		I2C1->CMD |= I2C_CMD_ABORT;
-	  		DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
-	  		i2c_Tx.transmissionError |= ABORT_BUSHOLD;
-	  		// xSemaphoreGiveFromISR(busySem, NULL);
-	  	}
+	  // Double check for Bushold and if there is one, abort.
+	  if (I2C1->IF & I2C_IF_BUSHOLD) {
+		  printf("BUSHOLD, IF: %x STATE: %x\n", I2C1->IF, I2C1->STATE);
+		  I2C1->CMD |= I2C_CMD_ABORT;
+		  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
+		  i2c_Tx.transmissionError |= ABORT_BUSHOLD;
+		  // xSemaphoreGiveFromISR(busySem, NULL);
 	  }
   }
 
@@ -448,6 +445,7 @@ void I2C1_IRQHandler(void) {
 
   // Put BUSERR, ARBLOST, CLTO, here.
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
+	  if (printfEnable) {puts("ERROR"); }
 	  if (flags & I2C_IF_BITO) {
 		  i2c_Tx.transmissionError |= BITO_ERR;
 	  }
