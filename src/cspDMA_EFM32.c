@@ -7,7 +7,7 @@
  *      File contains DMA configuration information
  *      for all used peripherals.
  *      Such as defining number of channels, the channels used
- *      by each peripheral, and also that pesky memory managment stuff.
+ *      by each peripheral, and also that pesky memory management stuff.
  *
  *      See Silicon Labs Application Note #0013 for more information
  *      https://www.silabs.com/documents/public/application-notes/AN0013.pdf

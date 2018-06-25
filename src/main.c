@@ -152,10 +152,6 @@ void setupI2C() {
 	*/
 	NVIC_SetPriority(I2C1_IRQn, I2C_INT_PRIO_LEVEL);
 
-	// Using default settings
-	//I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
-
-	// TODO confirm we are using 400kbit/sec, all testing based on S-band board
 	I2C_Init_TypeDef i2cInit = { \
 			true, \
 			true, \
@@ -396,16 +392,16 @@ void I2C1_IRQHandler(void) {
 	      if (printfEnable) {puts("Data received");}
 	  }
 
-	  if (I2C1->IF & I2C_IF_BUSHOLD) {
-		  I2C1->CMD |= I2C_CMD_ABORT;
-//		  if (I2C1->STATE == 0xD7) {
-	//		  I2C1->CMD |= I2C_CMD_STOP;
-		//  }
-		//  else {
-	//		  I2C1->RXDATA;
-	//	  }
-		  I2C_IntClear(I2C1, i2c_IFC_flags);
-		  puts("Here normally or not?");
+	  if (flags & I2C_IF_BUSHOLD) {
+	  	I2C_IntClear(I2C1, I2C_IFC_BUSHOLD);
+
+	  	// Double check for Bushold and if there is one, abort.
+	  	if (I2C1->IF & I2C_IF_BUSHOLD) {
+	  		I2C1->CMD |= I2C_CMD_ABORT;
+	  		DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
+	  		i2c_Tx.transmissionError |= ABORT_BUSHOLD;
+	  		// xSemaphoreGiveFromISR(busySem, NULL);
+	  	}
 	  }
   }
 
