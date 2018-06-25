@@ -389,9 +389,8 @@ void I2C1_IRQHandler(void) {
 	  // Double check for Bushold and if there is one, abort.
 	  if (I2C1->IF & I2C_IF_BUSHOLD) {
 
-		  // Data Transmitted and ACK received. Allow DMA to handle the rest.
+		  // Data Transmitted and ACK received. DMA was not fast enough to trigger stop.
 		  if (I2C1->STATE & I2C_STATE_MASTER) {
-			  printf("AutoSE? %x\n", I2C1->CTRL);
 			  I2C1->CMD |= I2C_CMD_STOP;
 		  }
 
@@ -464,7 +463,7 @@ void I2C1_IRQHandler(void) {
 		  i2c_Tx.transmissionError |= CLTO_ERR;
 	  }
 
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
+	 // I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
 	  i2c_rxBufferIndex = RX_INDEX_INIT;
