@@ -91,8 +91,8 @@
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_CLTO | \
 					  I2C_IEN_BUSERR | \
-					  I2C_IEN_BITO | \
-					  I2C_IEN_BUSHOLD)
+					  I2C_IEN_BITO)
+//					  I2C_IEN_BUSHOLD)
 
 /*
  * ISR Interrupt Flag Clear

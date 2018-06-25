@@ -79,9 +79,6 @@
 #include "testSharedMem.h"
 #include "EFM32_throwI2CErrors.h"
 
-// Boolean I use for debugging to determine whether or not I want a stream of printfs.
-#define printfEnable					false // TODO remove from final version
-
 // Buffers++
 uint8_t tempTxBuf0[] = "let go of my gecko?";
 uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
@@ -229,7 +226,6 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
-		//I2C_IntEnable(I2C1, I2C_IF_TXBL);
 
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
@@ -363,7 +359,6 @@ void I2C1_IRQHandler(void) {
 	    //  }
 
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
-	      if (printfEnable) {puts("Address match");}
 	  }
 
 	  /*
@@ -375,7 +370,6 @@ void I2C1_IRQHandler(void) {
 	  else if (flags & I2C_IF_RXDATAV) {
 		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
 		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
-	      if (printfEnable) {puts("Data received");}
 	  }
 
 	  /*
@@ -386,7 +380,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if (flags & I2C_IF_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
-		  if (printfEnable) {printf("NACK, IF: %x\n", I2C1->IF); }
+		  printf("NACK, IF: %x\n", I2C1->IF);
 		  I2C_IntClear(I2C1, i2c_IFC_flags);
 		  I2C1->CMD |= I2C_CMD_ABORT;
 		  //xSemaphoreGiveFromISR(busySem, NULL);
@@ -394,11 +388,24 @@ void I2C1_IRQHandler(void) {
 
 	  // Double check for Bushold and if there is one, abort.
 	  if (I2C1->IF & I2C_IF_BUSHOLD) {
-		  printf("BUSHOLD, IF: %x STATE: %x\n", I2C1->IF, I2C1->STATE);
-		  I2C1->CMD |= I2C_CMD_ABORT;
-		  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
-		  i2c_Tx.transmissionError |= ABORT_BUSHOLD;
-		  // xSemaphoreGiveFromISR(busySem, NULL);
+
+		  // Data Transmitted and ACK received. Allow DMA to handle the rest.
+		  if (I2C1->STATE & I2C_STATE_MASTER) {
+			  printf("AutoSE? %x\n", I2C1->CTRL);
+			  I2C1->CMD |= I2C_CMD_STOP;
+		  }
+
+		  else if (I2C1->STATE & 0x71) {
+			  puts("LOL");
+		  }
+
+		  else {
+			  printf("BUSHOLD, IF: %x STATE: %x\n", I2C1->IF, I2C1->STATE);
+			  I2C1->CMD |= I2C_CMD_ABORT;
+			  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
+			  i2c_Tx.transmissionError |= ABORT_BUSHOLD;
+			  // xSemaphoreGiveFromISR(busySem, NULL);
+		  }
 	  }
   }
 
@@ -413,7 +420,6 @@ void I2C1_IRQHandler(void) {
 	  flags &= ~I2C_IF_SSTOP;
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOSE;
 	  xSemaphoreGiveFromISR(busySem, NULL);
-	  if (printfEnable) {puts("Master Stop Detected");}
   }
 
   /*
@@ -445,7 +451,6 @@ void I2C1_IRQHandler(void) {
 
   // Put BUSERR, ARBLOST, CLTO, here.
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
-	  if (printfEnable) {puts("ERROR"); }
 	  if (flags & I2C_IF_BITO) {
 		  i2c_Tx.transmissionError |= BITO_ERR;
 	  }
