@@ -24,15 +24,15 @@
  * NUM_DMA_CHANNELS - Max 12 primary, 12 alternate (which I'm not touching)
  * 	Currently: 1, for I2C Tx
  * DESCRIPTOR_SIZE - Size of a descriptor block needed to be allocated.
- * ADDR_SPACE_SPARE_COEF - The address for the descriptor blocks must be aligned
- * 	It's base needs to be a multiple of its size.
- * 	Faculty Advisor, has told me to allocate 1.5x the space
- * 	rather than use a function like memalign
+ * BASE_RAW_SIZE: Base size of address block that will include an address which ends in 0x00.
+ * ALIGN_MASK: Alignment mask for the descriptor memory chunk.
+ * CSP_HPROT: Memory protection variable that is typically unset.
  * controlBlock - Array used. Will be aligned on init.
  */
-#define NUM_DMA_CHANNELS				16
+#define NUM_DMA_CHANNELS				1
 #define DESCRIPTOR_SIZE					16
-#define ADDR_SPACE_SPARE_COEF			2
+#define BASE_RAW_SIZE					256
+#define ALIGN_MASK						255
 #define CSP_HPROT						0
 
 /*
