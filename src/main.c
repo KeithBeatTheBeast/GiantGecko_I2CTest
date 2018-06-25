@@ -244,7 +244,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			if (i2c_Tx.transmissionError > 1) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
-		vTaskDelay(portTICK_PERIOD_MS * 0.25);
+		//vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
@@ -440,7 +440,7 @@ void I2C1_IRQHandler(void) {
 //			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
 //		  }
 
-		 // printf("%s\n", tempRxBuf);
+		  printf("%s\n", tempRxBuf);
 		  i2c_rxBufferIndex = RX_INDEX_INIT;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);

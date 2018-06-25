@@ -47,6 +47,10 @@ void cspDMA_Init(uint8_t hprot) {
 	 * https://stackoverflow.com/questions/227897/how-to-allocate-aligned-memory-only-using-the-standard-library
 	 * I will let the most popular answer explain how it works.
 	 *
+	 * One caveat - The last eight bits of the DMA Control Base Address Register are hard coded to zero.
+	 * This means that the space which must be allocated is 256 Bytes. Using our double allocation
+	 * method, this means we allocate 512 bytes, for the DMA controller of a single peripheral...
+	 *
 	 */
 	uint16_t align = NUM_DMA_CHANNELS * DESCRIPTOR_SIZE;
 	uintptr_t mask = ~(uintptr_t)(align - 1);
@@ -56,7 +60,6 @@ void cspDMA_Init(uint8_t hprot) {
 	/* properly aligned, according to requirements defined in the reference */
 	/* manual. */
 	DMA->CTRLBASE = (((uintptr_t)cbrAddr + align - 1) & mask);
-	printf("%x\n", DMA->CTRLBASE);
 
 	/* END OF VERY IMPORTANT CODE BLOCK THE REST IS COPY/PASTA FROM SILICON LABS! */
 
