@@ -138,7 +138,7 @@ volatile cspI2CTransfer_t i2c_Tx;
 // Rx Buffer Pointer
 uint8_t *i2c_Rx;
 
-// Rx buffer index
+// Rx buffer index/first transmission flag.
 static volatile bool i2c_RxInProgress;
 
 // FreeRTOS handles

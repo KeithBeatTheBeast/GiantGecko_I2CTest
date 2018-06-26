@@ -65,7 +65,7 @@
  ******************************************************************************
  *
  * 6/12/18: The scope of this branch has changed to now utilizing the DMA
- * controller for Tx and possibly Rx usage for the I2C module.
+ * controller for Tx and Rx usage.
  * Most of the work is based on the Silicon Labs Application Note for using the
  * DMA controller, AN0013
  * https://www.silabs.com/documents/public/application-notes/AN0013.pdf
@@ -83,8 +83,6 @@
 uint8_t tempTxBuf0[] = "let go of my gecko?";
 uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
 uint8_t tempRxBuf[20];
-
-uint8_t *rxStartPointer;
 
 /********************************************************************
  * @brief Function called when DMA transfer is complete.
@@ -104,9 +102,10 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	}
 
 	else if (channel == DMA_CHANNEL_I2C_RX) {
+
+		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
 		int *endPtr = DMA->CTRLBASE + 0x18;
 		int count = MAX_FRAME_SIZE - ((*endPtr & 0x00003FF0) >> 4) - 1;
-		//printf("%c\n", tempRxBuf[0]);
 		printf("%d\n", count);
 		printf("%s\n", tempRxBuf);
 
@@ -204,8 +203,9 @@ void setupI2C() {
 			I2C_CTRL_AUTOSN | \
 			I2C_CTRL_AUTOACK | \
 		  	I2C_CTRL_BITO_160PCC | \
-			I2C_CTRL_CLTO_1024PPC | \
-		  	I2C_CTRL_GIBITO;
+			I2C_CTRL_GIBITO;
+			//I2C_CTRL_CLTO_1024PPC;
+
 
 	// Only accept transmissions if it is directly talking to me.
 	I2C1->SADDRMASK |= 0x7F;
@@ -243,6 +243,8 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		i2c_Tx.txIndex = TX_INDEX_INIT;         // Reset index to -1 always
 		i2c_Tx.transmissionError = NO_TRANS_ERR;// Set error flag to zero.
 
+		I2C1->CMD |= I2C_CMD_CLEARTX;
+
 		// Load address. TODO format data from queue
 		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
 
@@ -270,7 +272,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
-		vTaskDelay(portTICK_PERIOD_MS * 0.25);
+//		vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
@@ -370,17 +372,17 @@ void I2C1_IRQHandler(void) {
 	  if (flags & I2C_IF_ADDR ) {
 
 	      // Setup DMA Transfer
-	      rxStartPointer = tempRxBuf;
+		  tempRxBuf[0] = I2C1->RXDATA;
+	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
+	      i2c_RxInProgress = true;
 	      DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
 	    		  true,
 				  false,
-				  (void*)tempRxBuf,
+				  (void*)tempRxBuf + 2,
 				  (void*)&(I2C1->RXDATA),
 				  MAX_FRAME_SIZE);
 
-		  i2c_RxInProgress = true;
-		  I2C1->RXDATA;
-	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
+	      tempRxBuf[1] = I2C1->RXDATA;
 
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
@@ -398,17 +400,6 @@ void I2C1_IRQHandler(void) {
 	   //   I2C1->CTRL |= I2C_CTRL_AUTOACK;
 	    //  }
 	  }
-
-	  /*
-	   * Slave Receiver:
-	   * The Master has sent data (0xB1)
-	   * Load it into the Rx buffer and increment pointer
-	   * RXDATA IF is cleared when the buffer is read.
-	   */
-//	  else if (flags & I2C_IF_RXDATAV) {
-//		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
-//		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
-//	  }
 
 	  /*
 	   * Master Transmitter:
