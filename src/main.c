@@ -84,6 +84,8 @@ uint8_t tempTxBuf0[] = "let go of my gecko?";
 uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
 uint8_t tempRxBuf[20];
 
+uint8_t *rxStartPointer;
+
 /********************************************************************
  * @brief Function called when DMA transfer is complete.
  * Enables interrupts when doing a DMA read.
@@ -100,6 +102,10 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	if (channel == DMA_CHANNEL_I2C_TX) {
 		I2C1->CTRL |= I2C_CTRL_AUTOSE;
 	}
+
+	else if (channel == DMA_CHANNEL_I2C_RX) {
+		printf("Size: %d, Data: %s\n", tempRxBuf - rxStartPointer, tempRxBuf);
+	}
 }
 
 /******************************************************************************
@@ -110,6 +116,9 @@ void setupDMA() {
 	/* Initialization Struct, and the Tx Structs */
 	DMA_CfgChannel_TypeDef  txChannelConfig;
 	DMA_CfgDescr_TypeDef	txDescriptorConfig;
+
+	DMA_CfgChannel_TypeDef  rxChannelConfig;
+	DMA_CfgDescr_TypeDef	rxDescriptorConfig;
 
 	cspDMA_Init(CSP_HPROT);
 
@@ -131,6 +140,21 @@ void setupDMA() {
 	txDescriptorConfig.arbRate = dmaArbitrate1;
 	txDescriptorConfig.hprot   = 0;
 	DMA_CfgDescr(DMA_CHANNEL_I2C_TX, true, &txDescriptorConfig);
+
+	/* Setting up RX channel */
+	rxChannelConfig.highPri    = true;
+	rxChannelConfig.enableInt  = true;
+	rxChannelConfig.select     = DMAREQ_I2C1_RXDATAV;
+	rxChannelConfig.cb 		   = &dmaCB;
+	DMA_CfgChannel(DMA_CHANNEL_I2C_RX, &rxChannelConfig);
+
+	/* Setting up RX channel descriptor */
+	rxDescriptorConfig.dstInc  = dmaDataInc1;
+	rxDescriptorConfig.srcInc  = dmaDataIncNone;
+	rxDescriptorConfig.size    = dmaDataSize1;
+	rxDescriptorConfig.arbRate = dmaArbitrate1;
+	rxDescriptorConfig.hprot   = 0;
+	DMA_CfgDescr(DMA_CHANNEL_I2C_RX, true, &rxDescriptorConfig);
 }
 
 /**************************************************************************//**
@@ -241,7 +265,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
-		//vTaskDelay(portTICK_PERIOD_MS * 0.25);
+		vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
@@ -343,6 +367,15 @@ void I2C1_IRQHandler(void) {
 	      I2C1->RXDATA;
 	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
 
+	      // Setup DMA Transfer
+	      rxStartPointer = tempRxBuf;
+	      DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
+	    		  true,
+				  false,
+				  (void*)tempRxBuf,
+				  (void*)&(I2C1->RXDATA),
+				  MAX_FRAME_SIZE);
+
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
 	      // We were unable to allocate memory from the shared memory system
@@ -366,10 +399,10 @@ void I2C1_IRQHandler(void) {
 	   * Load it into the Rx buffer and increment pointer
 	   * RXDATA IF is cleared when the buffer is read.
 	   */
-	  else if (flags & I2C_IF_RXDATAV) {
-		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
-		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
-	  }
+//	  else if (flags & I2C_IF_RXDATAV) {
+//		  //i2c_Rx[i2c_rxBufferIndex++] = I2C1->RXDATA;
+//		  tempRxBuf[i2c_rxBufferIndex++] = I2C1->RXDATA;
+//	  }
 
 	  /*
 	   * Master Transmitter:
@@ -379,7 +412,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if (flags & I2C_IF_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
-		  printf("NACK, IF: %x\n", I2C1->IF);
+		  //printf("NACK, IF: %x\n", I2C1->IF);
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 		  I2C1->CMD |= I2C_CMD_ABORT;
 		  //xSemaphoreGiveFromISR(busySem, NULL);
@@ -441,9 +474,12 @@ void I2C1_IRQHandler(void) {
 //			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
 //		  }
 
-		  printf("%s\n", tempRxBuf);
-		  i2c_rxBufferIndex = RX_INDEX_INIT;
+		  //printf("%s\n", tempRxBuf);
+
 	  }
+	  DMA->IFS = DMA_COMPLETE_I2C_RX;
+	  //printf("Size: %d, Data: %s\n", tempRxBuf - rxStartPointer, tempRxBuf);
+	  i2c_rxBufferIndex = RX_INDEX_INIT;
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 

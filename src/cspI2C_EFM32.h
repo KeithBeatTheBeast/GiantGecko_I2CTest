@@ -83,7 +83,6 @@
  * Will cause the interrupt to fire.
  */
 #define i2c_IEN_flags (I2C_IEN_ADDR | \
-					  I2C_IEN_RXDATAV | \
 					  I2C_IEN_SSTOP | \
 					  I2C_IEN_RSTART | \
 					  I2C_IEN_ARBLOST | \

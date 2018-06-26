@@ -29,7 +29,7 @@
  * CSP_HPROT: Memory protection variable that is typically unset.
  * controlBlock - Array used. Will be aligned on init.
  */
-#define NUM_DMA_CHANNELS				1
+#define NUM_DMA_CHANNELS				2
 #define DESCRIPTOR_SIZE					16
 #define BASE_RAW_SIZE					256
 #define ALIGN_MASK						255
@@ -45,6 +45,9 @@
  */
 #define DMA_CHANNEL_I2C_TX 				0
 #define DMA_ENABLE_I2C_TX  				DMA_CHENS_CH0ENS
+#define DMA_CHANNEL_I2C_RX				1
+#define DMA_ENABLE_I2C_RX				DMA_CHENS_CH1ENS
+#define DMA_COMPLETE_I2C_RX				DMA_IFS_CH1DONE
 static DMA_CB_TypeDef 					dmaCB;
 
 /***************************************************************************//**
