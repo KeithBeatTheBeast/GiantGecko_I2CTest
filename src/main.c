@@ -104,9 +104,12 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	}
 
 	else if (channel == DMA_CHANNEL_I2C_RX) {
-		uint8_t *endPtr = DMA->CTRLBASE + 0x14;
-		printf("Start: %x, End: %x\n", &tempRxBuf[0], *endPtr);
+		int *endPtr = DMA->CTRLBASE + 0x18;
+		int count = MAX_FRAME_SIZE - ((*endPtr & 0x00003FF0) >> 4) - 1;
+		//printf("%c\n", tempRxBuf[0]);
+		printf("%d\n", count);
 		printf("%s\n", tempRxBuf);
+
 	}
 }
 
