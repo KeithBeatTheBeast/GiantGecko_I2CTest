@@ -139,7 +139,7 @@ volatile cspI2CTransfer_t i2c_Tx;
 uint8_t *i2c_Rx;
 
 // Rx buffer index
-static int16_t i2c_rxBufferIndex;
+static volatile bool i2c_RxInProgress;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem; // Tx semaphore

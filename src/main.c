@@ -104,7 +104,9 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	}
 
 	else if (channel == DMA_CHANNEL_I2C_RX) {
-		printf("Size: %d, Data: %s\n", tempRxBuf - rxStartPointer, tempRxBuf);
+		uint8_t *endPtr = DMA->CTRLBASE + 0x14;
+		printf("Start: %x, End: %x\n", &tempRxBuf[0], *endPtr);
+		printf("%s\n", tempRxBuf);
 	}
 }
 
@@ -206,7 +208,7 @@ void setupI2C() {
 	I2C1->SADDRMASK |= 0x7F;
 
 	// Set Rx index to zero.
-	i2c_rxBufferIndex = RX_INDEX_INIT;
+	i2c_RxInProgress = false;
 
 	// Enable interrupts
 	I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -332,8 +334,7 @@ int main(void) {
 static inline bool checkFlags(int flag) {
 	return (flag & (I2C_IF_BUSHOLD | \
 			I2C_IF_NACK | \
-			I2C_IF_ADDR | \
-			I2C_IF_RXDATAV));
+			I2C_IF_ADDR));
 }
 
 /**************************************************************************//**
@@ -364,8 +365,6 @@ void I2C1_IRQHandler(void) {
 	   * Read the Rx buffer
 	   */
 	  if (flags & I2C_IF_ADDR ) {
-	      I2C1->RXDATA;
-	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
 
 	      // Setup DMA Transfer
 	      rxStartPointer = tempRxBuf;
@@ -375,6 +374,10 @@ void I2C1_IRQHandler(void) {
 				  (void*)tempRxBuf,
 				  (void*)&(I2C1->RXDATA),
 				  MAX_FRAME_SIZE);
+
+		  i2c_RxInProgress = true;
+		  I2C1->RXDATA;
+	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
 
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
@@ -461,7 +464,7 @@ void I2C1_IRQHandler(void) {
    * Also repeated start since it is a valid way to end a transmission
    */
   if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
-	  if (i2c_rxBufferIndex != RX_INDEX_INIT) {
+	  if (i2c_RxInProgress) {
 
 		  // We're done the transmission, so disable auto-acks.
 		//  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
@@ -476,10 +479,9 @@ void I2C1_IRQHandler(void) {
 
 		  //printf("%s\n", tempRxBuf);
 
+		  DMA->IFS = DMA_COMPLETE_I2C_RX;
+		  i2c_RxInProgress = false;
 	  }
-	  DMA->IFS = DMA_COMPLETE_I2C_RX;
-	  //printf("Size: %d, Data: %s\n", tempRxBuf - rxStartPointer, tempRxBuf);
-	  i2c_rxBufferIndex = RX_INDEX_INIT;
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
@@ -501,7 +503,7 @@ void I2C1_IRQHandler(void) {
 	 // I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
-	  i2c_rxBufferIndex = RX_INDEX_INIT;
+	  i2c_RxInProgress = false;
 	  //xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
