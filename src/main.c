@@ -341,6 +341,7 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if (flags & I2C_IF_ADDR ) {
 	      I2C1->RXDATA;
+	      I2C_IntClear(I2C1, I2C_IFC_ADDR);
 
 	 //     i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
@@ -357,8 +358,6 @@ void I2C1_IRQHandler(void) {
 	  //    I2C1->CMD |= I2C_CMD_ACK;
 	   //   I2C1->CTRL |= I2C_CTRL_AUTOACK;
 	    //  }
-
-		  I2C_IntClear(I2C1, I2C_IFC_ADDR);
 	  }
 
 	  /*
@@ -381,7 +380,7 @@ void I2C1_IRQHandler(void) {
 	  if (flags & I2C_IF_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
 		  printf("NACK, IF: %x\n", I2C1->IF);
-		  I2C_IntClear(I2C1, i2c_IFC_flags);
+		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 		  I2C1->CMD |= I2C_CMD_ABORT;
 		  //xSemaphoreGiveFromISR(busySem, NULL);
 	  }
