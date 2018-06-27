@@ -85,6 +85,14 @@ uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
 uint8_t tempRxBuf[20];
 
 /********************************************************************
+ * @brief Inline function for calculating the address of the
+ * CTRL register of the RX Channel's Descriptor
+ */
+static inline int16_t *getRxDMACtrlAddr() {
+	return DMA->CTRLBASE + (DMA_CHANNEL_I2C_RX * CHANNEL_MULT_OFFSET) + CTRL_ADD_OFFSET;
+}
+
+/********************************************************************
  * @brief Function called when DMA transfer is complete.
  * Enables interrupts when doing a DMA read.
  * THIS FUNCTION IS CALLED IN AN ISR CONTEXT BY THE DMA'S IRQ
@@ -105,8 +113,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
 		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
-		int *endPtr = DMA->CTRLBASE + (DMA_CHANNEL_I2C_RX * CHANNEL_MULT_OFFSET) + CTRL_ADD_OFFSET;
-		int count = MAX_FRAME_SIZE - ((*endPtr & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT);
+		int count = MAX_FRAME_SIZE - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT);
 
 		// I literally put this here to prevent a size misalignment on the first transfer.
 		if (firstRx) {
@@ -417,10 +424,9 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if (flags & I2C_IF_NACK) {
 		  i2c_Tx.transmissionError |= NACK_ERR;
-		  //printf("NACK, IF: %x\n", I2C1->IF);
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 		  I2C1->CMD |= I2C_CMD_ABORT;
-		  //xSemaphoreGiveFromISR(busySem, NULL);
+		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
 
 	  // Double check for Bushold and if there is one, abort.
