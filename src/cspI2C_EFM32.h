@@ -88,10 +88,9 @@
 					  I2C_IEN_ARBLOST | \
 					  I2C_IEN_NACK | \
 					  I2C_IEN_MSTOP | \
-					  I2C_IEN_CLTO | \
 					  I2C_IEN_BUSERR | \
 					  I2C_IEN_BITO | \
-					  I2C_IEN_BUSHOLD)
+					  I2C_IEN_BUSHOLD) // Removed CLTO
 
 /*
  * ISR Interrupt Flag Clear

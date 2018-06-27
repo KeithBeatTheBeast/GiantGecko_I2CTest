@@ -209,8 +209,8 @@ void setupI2C() {
 			I2C_CTRL_AUTOSN | \
 			I2C_CTRL_AUTOACK | \
 		  	I2C_CTRL_BITO_160PCC | \
-			I2C_CTRL_GIBITO | \
-			I2C_CTRL_CLTO_1024PPC;
+			I2C_CTRL_GIBITO;
+			//I2C_CTRL_CLTO_1024PPC;
 
 
 	// Only accept transmissions if it is directly talking to me.
@@ -277,11 +277,10 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 		// Error happened. TODO send to upper layer
 		if (i2c_Tx.transmissionError > 0) {
-			if (i2c_Tx.transmissionError > 0) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
+			if (i2c_Tx.transmissionError > 1) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
 			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
-//		vTaskDelay(portTICK_PERIOD_MS * 0.25);
 	}
 }
 
@@ -432,16 +431,11 @@ void I2C1_IRQHandler(void) {
 			  I2C1->CMD |= I2C_CMD_STOP;
 		  }
 
-		  else if (I2C1->STATE & 0x71) {
-			  puts("LOL");
-		  }
-
 		  else {
-			  printf("BUSHOLD, IF: %x STATE: %x\n", I2C1->IF, I2C1->STATE);
 			  I2C1->CMD |= I2C_CMD_ABORT;
 			  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
 			  i2c_Tx.transmissionError |= ABORT_BUSHOLD;
-			  // xSemaphoreGiveFromISR(busySem, NULL);
+			  xSemaphoreGiveFromISR(busySem, NULL);
 		  }
 	  }
   }
