@@ -62,7 +62,7 @@
 #define TX_DELAY_MULTIPLIER				1    // Multiplied by portTICK_PERIOD_MS to determine wait time after transfer complete
 #define RX_INDEX_INIT					0	 // Rx Index start value/reset value
 #define ADD_BYTE_LIMIT					-1   // Used to determine whether or not we're at the end of Tx
-#define MAX_FRAME_SIZE					256  // Adjustable, assume worst case scenario
+#define MAX_FRAME_SIZE					1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
 
 /* cspI2CTransfer_t Error codes for transmissionError field */
 #define NO_TRANS_ERR					0x00
@@ -139,7 +139,7 @@ volatile cspI2CTransfer_t i2c_Tx;
 uint8_t *i2c_Rx;
 
 // Rx buffer index/first transmission flag.
-static volatile bool i2c_RxInProgress;
+static volatile bool i2c_RxInProgress, firstRx;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem; // Tx semaphore

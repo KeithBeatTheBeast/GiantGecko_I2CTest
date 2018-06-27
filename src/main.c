@@ -105,10 +105,15 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 
 		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
 		int *endPtr = DMA->CTRLBASE + 0x18;
-		int count = MAX_FRAME_SIZE - ((*endPtr & 0x00003FF0) >> 4) - 1;
+		int count = MAX_FRAME_SIZE - ((*endPtr & 0x00003FF0) >> 4);
+
+		// I literally put this here to prevent a size misalignment on the first transfer.
+		if (firstRx) {
+			firstRx = false;
+			count--;
+		}
 		printf("%d\n", count);
 		printf("%s\n", tempRxBuf);
-
 	}
 }
 
@@ -212,6 +217,9 @@ void setupI2C() {
 
 	// Set Rx index to zero.
 	i2c_RxInProgress = false;
+
+	// We do an operation on the first Rx.
+	firstRx = true;
 
 	// Enable interrupts
 	I2C_IntClear(I2C1, i2c_IFC_flags);
@@ -380,7 +388,7 @@ void I2C1_IRQHandler(void) {
 				  false,
 				  (void*)tempRxBuf + 2,
 				  (void*)&(I2C1->RXDATA),
-				  MAX_FRAME_SIZE);
+				  MAX_FRAME_SIZE - 1);
 
 	      tempRxBuf[1] = I2C1->RXDATA;
 
