@@ -87,6 +87,7 @@ uint8_t tempRxBuf[20];
 /********************************************************************
  * @brief Function called when DMA transfer is complete.
  * Enables interrupts when doing a DMA read.
+ * THIS FUNCTION IS CALLED IN AN ISR CONTEXT BY THE DMA'S IRQ
  *******************************************************************/
 void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 
@@ -112,8 +113,8 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 			firstRx = false;
 			count--;
 		}
-		printf("%d\n", count);
-		printf("%s\n", tempRxBuf);
+	//	printf("%d\n", count);
+	//	printf("%s\n", tempRxBuf);
 	}
 }
 
@@ -208,8 +209,8 @@ void setupI2C() {
 			I2C_CTRL_AUTOSN | \
 			I2C_CTRL_AUTOACK | \
 		  	I2C_CTRL_BITO_160PCC | \
-			I2C_CTRL_GIBITO;
-			//I2C_CTRL_CLTO_1024PPC;
+			I2C_CTRL_GIBITO | \
+			I2C_CTRL_CLTO_1024PPC;
 
 
 	// Only accept transmissions if it is directly talking to me.
@@ -276,7 +277,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 		// Error happened. TODO send to upper layer
 		if (i2c_Tx.transmissionError > 0) {
-			if (i2c_Tx.transmissionError > 1) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
+			if (i2c_Tx.transmissionError > 0) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
 			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
@@ -479,15 +480,13 @@ void I2C1_IRQHandler(void) {
 //			  i2c_Tx.transmissionError |= F_QUEUE_ERR;
 //		  }
 
-		  //printf("%s\n", tempRxBuf);
-
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  i2c_RxInProgress = false;
 	  }
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
-  // Put BUSERR, ARBLOST, CLTO, here.
+  // Put ARBLOST, BITO, BUSERR, CLTO, here.
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
 	  if (flags & I2C_IF_BITO) {
 		  i2c_Tx.transmissionError |= BITO_ERR;
@@ -503,6 +502,13 @@ void I2C1_IRQHandler(void) {
 	  }
 
 	 // I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
+	  if (i2c_RxInProgress) {
+		  DMA->IFS = DMA_COMPLETE_I2C_RX;
+	  }
+
+	  else {
+		  DMA->IFS = DMA_COMPLETE_I2C_TX;
+	  }
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;
