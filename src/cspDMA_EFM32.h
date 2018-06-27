@@ -37,10 +37,21 @@
 
 /*
  * I2C DMA CONSTANTS
- * DMA_CHANNEL_I2C_TX is the channel used, between 0 and 11
- * DMA_ENABLE_I2C_TX is the ENABLE/DISABLE bit for the DMA->CHENS register.
+ * DMA_CHANNEL_I2C_TX/RX is the channel used, between 0 and 11
+ * DMA_ENABLE_I2C_TX/Rx is the ENABLE/DISABLE bit for the DMA->CHENS register.
  * 	It is a wrapper for another variable, which should be of the form
  * 	DMA_CHENS_CH#ENS where # is the channel number
+ * CHANNEL_MULT_OFFSET is the hex value which is to be multiplied by the channel number
+ * 	and then added to the base address of the DMA->CTRLBASE register to reach
+ * 	the descriptor base address for that channel
+ * CTRL_ADD_OFFSET is the offset used for accessing the CTRL field of a channel's descriptor
+ * 	added to the base address
+ * TRANS_REMAIN_MASK: AND this with the value of the CTRL field for a descriptor to clear all bits
+ * 	which are not part of the n_minus_1 field (telling you how many transfers are left)
+ * TRANS_REMAIN_SHIFT: AFTER ANDing CTRL with TRANS_REMAIN_MASK, right shift the result (>>) by
+ * 	this value to get the # of transfers that have yet to be completed.
+ * 	Then, based on the value of transfers requested, you can see how many remain.
+ *
  * dmaCB is the callback structure.
  */
 #define DMA_CHANNEL_I2C_TX 				0
@@ -48,6 +59,10 @@
 #define DMA_CHANNEL_I2C_RX				1
 #define DMA_ENABLE_I2C_RX				DMA_CHENS_CH1ENS
 #define DMA_COMPLETE_I2C_RX				DMA_IFS_CH1DONE
+#define CHANNEL_MULT_OFFSET				0x10
+#define CTRL_ADD_OFFSET					0x08
+#define TRANS_REMAIN_MASK				0x00003FF0
+#define TRANS_REMAIN_SHIFT				4
 static DMA_CB_TypeDef 					dmaCB;
 
 /***************************************************************************//**

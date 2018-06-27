@@ -104,8 +104,8 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
 		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
-		int *endPtr = DMA->CTRLBASE + 0x18;
-		int count = MAX_FRAME_SIZE - ((*endPtr & 0x00003FF0) >> 4);
+		int *endPtr = DMA->CTRLBASE + (DMA_CHANNEL_I2C_RX * CHANNEL_MULT_OFFSET) + CTRL_ADD_OFFSET;
+		int count = MAX_FRAME_SIZE - ((*endPtr & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT);
 
 		// I literally put this here to prevent a size misalignment on the first transfer.
 		if (firstRx) {
