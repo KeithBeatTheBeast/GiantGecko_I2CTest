@@ -307,7 +307,6 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
-		//vTaskDelay(portTICK_PERIOD_MS);
 	}
 }
 
@@ -399,24 +398,21 @@ void I2C1_IRQHandler(void) {
   if (checkFlags(flags)) {
 
 	  /*
-	   * Slave Receiver Conditionals
-	   * See Table 16.10, page 433 of the EFM32GG Reference Manual
-	   * All States that would trigger a BUSHOLD are accounted for.
-	   *
 	   * Slave Receiver:
 	   * Start Condition on the line has been detected
 	   * Automatic Address Matching has determined a Master is trying to talk to this device
-	   * 0x71 is the state
-	   * Basically the same code from Silicon Labs
-	   * Read the Rx buffer
 	   */
 	  if (flags & I2C_IF_ADDR ) {
 
+		  // Ack the address or else it will be interpreted as a NACK.
 		  I2C1->CMD = I2C_CMD_ACK;
 
-		  // Get a chunk of memory. TODO for now we assume a block is available.
+		  // Pend the shared memory for a buffer pointer.
 		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
+		  // The buffer pend returned true, so we can accept the transmission.
+		  // Get the first byte, set up for AUTO-ACKs so the DMA handles all incoming
+		  // And activate the DMA. Done.
 		  if (i2c_Rx != pdFALSE) {
 			  // Setup DMA Transfer
 			  i2c_Rx[0] = I2C1->RXDATA;
@@ -430,10 +426,14 @@ void I2C1_IRQHandler(void) {
 					  MAX_FRAME_SIZE - 1);
 		  }
 
+		  // No pointers are availible so we cannot accept the data.
+		  // Send a NACK and abort the transmission.
 		  else {
 			  I2C1->CMD = I2C_CMD_NACK | I2C_CMD_ABORT;
 			  transmissionError |= E_QUEUE_ERR;
 		  }
+
+		  // In all cases the Interrupt flag must be cleared.
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IFC_BUSHOLD);
 	  }
 
@@ -449,7 +449,12 @@ void I2C1_IRQHandler(void) {
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
 
-	  // Double check for Bushold and if there is one, abort.
+	  /*
+	   * Sometimes we encounter BUSHOLD
+	   * Most of the time it was because the DMA IRQ was not fast enough
+	   * to tell the I2C module to sent it's stop condition when TXBL and TXC are fully
+	   * emptied so the bus locks up.
+	   */
 	  if (I2C1->IF & I2C_IF_BUSHOLD) {
 
 		  // Data Transmitted and ACK received. DMA was not fast enough to trigger stop.
@@ -473,7 +478,7 @@ void I2C1_IRQHandler(void) {
    * Release semaphore
    */
   if (flags & I2C_IF_MSTOP) {
-	  I2C_IntClear(I2C1, i2c_IFC_flags); // TODO Is this clear a potential source of error?
+	  I2C_IntClear(I2C1, i2c_IFC_flags);
 	  flags &= ~I2C_IF_SSTOP;
 	  I2C1->CTRL &= ~I2C_CTRL_AUTOSE;
 	  xSemaphoreGiveFromISR(busySem, NULL);
@@ -489,12 +494,10 @@ void I2C1_IRQHandler(void) {
   if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
 	  if (i2c_RxInProgress) {
 
-		  // TODO something about AUTO ACKS
 		  // Send Data to Rx task for processing. DMA IRQ handles calculating and
 		  // posting the actual size of bytes RX'd to a separate queue.
 		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) != pdTRUE) {
 			 transmissionError |= F_QUEUE_ERR;
-			 puts("Data Queue Insert Error");
 			 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  }
 
@@ -507,7 +510,6 @@ void I2C1_IRQHandler(void) {
   }
 
   // Put ARBLOST, BITO, BUSERR, CLTO, here.
-  // TODO this section is a source of error.
   // It worked without the DMA but now it causes both devices to simply spam start conditions
   // And never latch onto each other.
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
