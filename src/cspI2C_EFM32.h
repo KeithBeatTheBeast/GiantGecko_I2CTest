@@ -56,7 +56,7 @@
 #define I2C_TASKPRIORITY				2    // TODO adjust as needed
 #define I2C_WRITE					    0xFE // Should always be Master Trans/Slave Rec
 #define I2C_READ					    0xFF // Future Potential Functionality
-#define I2C_INT_PRIO_LEVEL				5    // Interrupt priority level
+#define I2C_INT_PRIO_LEVEL				6    // Interrupt priority level
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
 #define TX_DELAY_MULTIPLIER				1    // Multiplied by portTICK_PERIOD_MS to determine wait time after transfer complete
