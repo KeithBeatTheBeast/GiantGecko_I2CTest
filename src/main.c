@@ -82,7 +82,6 @@
 // Buffers++
 uint8_t tempTxBuf0[] = "let go of my gecko?";
 uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
-//uint8_t tempRxBuf[20];
 
 /********************************************************************
  * @brief Inline function for calculating the address of the
@@ -124,7 +123,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
 		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
-		uint16_t count = MAX_FRAME_SIZE - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT);
+		uint16_t count = MAX_FRAME_SIZE - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) -1 ;
 
 		// I literally put this here to prevent a size misalignment on the first transfer.
 		if (firstRx) {
@@ -239,10 +238,9 @@ void setupI2C() {
 	I2C1->SADDR = I2C_ADDRESS;
 	I2C1->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOSN | \
-			I2C_CTRL_AUTOACK | \
 		  	I2C_CTRL_BITO_160PCC | \
 			I2C_CTRL_GIBITO | \
-			I2C_CTRL_CLTO_1024PPC;
+			I2C_CTRL_CLTO_1024PPC; // Removed autoack
 
 
 	// Only accept transmissions if it is directly talking to me.
@@ -408,35 +406,28 @@ void I2C1_IRQHandler(void) {
 	   */
 	  if (flags & I2C_IF_ADDR ) {
 
+		  I2C1->CMD = I2C_CMD_ACK;
+
 		  // Get a chunk of memory. TODO for now we assume a block is available.
 		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
-	      // Setup DMA Transfer
-		  i2c_Rx[0] = I2C1->RXDATA;
-	      I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IFC_BUSHOLD);
-	      i2c_RxInProgress = true;
-	      DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
-	    		  true,
-				  false,
-				  (void*)i2c_Rx + 2,
-				  (void*)&(I2C1->RXDATA),
-				  MAX_FRAME_SIZE - 1);
+		  if (i2c_Rx != pdFALSE) {
+			  // Setup DMA Transfer
+			  i2c_Rx[0] = I2C1->RXDATA;
+			  I2C1->CTRL |= I2C_CTRL_AUTOACK;
+			  i2c_RxInProgress = true;
+			  DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
+					  true,
+					  false,
+					  (void*)i2c_Rx + 1,
+					  (void*)&(I2C1->RXDATA),
+					  MAX_FRAME_SIZE - 1);
+		  }
 
-	      i2c_Rx[1] = I2C1->RXDATA;
-
-	      // We were unable to allocate memory from the shared memory system
-	      // Report error to task, issue an abort and a NACK
-	   //   if (i2c_Rx == pdFALSE) {
-	    //	  i2c_Tx.transmissionError |= E_QUEUE_ERR;
-	    //	  I2C1->CMD |= I2C_CMD_ABORT | I2C_CMD_NACK;
-	     // }
-
-	      // We WERE able to retrieve a memory pointer from the shared system
-	      // Send an ACK to the master, and enable auto-acks on the remaining.
-	     // else {
-	  //    I2C1->CMD |= I2C_CMD_ACK;
-	   //   I2C1->CTRL |= I2C_CTRL_AUTOACK;
-	    //  }
+		  else {
+			  I2C1->CMD = I2C_CMD_NACK | I2C_CMD_ABORT;
+		  }
+		  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IFC_BUSHOLD);
 	  }
 
 	  /*
@@ -504,6 +495,7 @@ void I2C1_IRQHandler(void) {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  i2c_RxInProgress = false;
 	  }
+	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
@@ -534,7 +526,7 @@ void I2C1_IRQHandler(void) {
 		  DMA->IFS = DMA_COMPLETE_I2C_TX;
 	  }
 
-	  // TODO something about Auto-Acks
+	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2C1->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;

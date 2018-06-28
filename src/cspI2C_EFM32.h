@@ -87,7 +87,8 @@
 					  I2C_IEN_MSTOP | \
 					  I2C_IEN_BUSERR | \
 					  I2C_IEN_BITO | \
-					  I2C_IEN_BUSHOLD) // Removed CLTO
+					  I2C_IEN_BUSHOLD | \
+					  I2C_IEN_CLTO) // Removed CLTO
 
 /*
  * ISR Interrupt Flag Clear
@@ -123,5 +124,7 @@ static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
 
 // Shared memory handle
 static SharedMem_t		 i2cSharedMem;
+
+static volatile uint8_t firstByte;
 
 #endif /* CSPI2C_EFM32_H_ */
