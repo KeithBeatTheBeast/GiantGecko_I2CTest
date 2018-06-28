@@ -133,7 +133,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 		}
 
 		if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
-			i2c_Tx.transmissionError |= F_QUEUE_ERR;
+			transmissionError |= F_QUEUE_ERR;
 			puts("Index Queue Send Error");
 		}
 	}
@@ -274,27 +274,23 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 	uint32_t c = 0;
 	while (1) {
 
+		uint8_t *txData;
 		// TODO pend queue
-		/* Initializing I2C transfer */
-		i2c_Tx.addr    = I2C_ADDRESS;           // TODO get address from LUT
-		i2c_Tx.rwBit   = I2C_WRITE;				// TODO hardcode to write.
-		if (c++ % 2 == 0) {i2c_Tx.txData  = tempTxBuf0;} // TODO temp, remove.
-		else {i2c_Tx.txData  = tempTxBuf1;}
-		i2c_Tx.len     = 20;         			// TODO need to somehow get size of memory
-		i2c_Tx.txIndex = TX_INDEX_INIT;         // Reset index to -1 always
-		i2c_Tx.transmissionError = NO_TRANS_ERR;// Set error flag to zero.
+		if (c++ % 2 == 0) {txData  = tempTxBuf0;} // TODO temp, remove.
+		else {txData  = tempTxBuf1;}
+		transmissionError = NO_TRANS_ERR; // Set error flag to zero.
 
 		I2C1->CMD |= I2C_CMD_CLEARTX;
 
 		// Load address. TODO format data from queue
-		I2C1->TXDATA = i2c_Tx.addr & i2c_Tx.rwBit;
+		I2C1->TXDATA = I2C_ADDRESS & I2C_WRITE;
 
 		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
 				true,
 				false,
 				(void*)&(I2C1->TXDATA),
-				(void*)i2c_Tx.txData,
-				i2c_Tx.len - 1);
+				(void*)txData,
+				20 - 1); // TODO get from upper layer.
 
 		// Issue start condition
 		I2C1->CMD |= I2C_CMD_START;
@@ -304,12 +300,12 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		// will eventually become a task where at the top, we pend a queue.
 		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
 			I2C1->CMD = I2C_CMD_ABORT;
-			i2c_Tx.transmissionError |= TIMEOUT_ERR;
+			transmissionError |= TIMEOUT_ERR;
 		}
 
 		// Error happened. TODO send to upper layer
-		if (i2c_Tx.transmissionError > 0) {
-			if (i2c_Tx.transmissionError > 1) {printf("Error: %x, IF: %x\n", i2c_Tx.transmissionError, I2C1->IF);}
+		if (transmissionError > 0) {
+			if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2C1->IF);}
 			I2C1->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
@@ -355,7 +351,7 @@ int main(void) {
 	if (rxIndexQueue == NULL) { puts("Creation of Rx Index Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Index Queue Successful");}
 
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, 5);
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
 
@@ -449,7 +445,7 @@ void I2C1_IRQHandler(void) {
 	   * I2C_CTRL_AUTOSN flags ensures we cut transmission on a NACK but we need to report the error.
 	   */
 	  if (flags & I2C_IF_NACK) {
-		  i2c_Tx.transmissionError |= NACK_ERR;
+		  transmissionError |= NACK_ERR;
 		  I2C_IntClear(I2C1, I2C_IFC_NACK);
 		  I2C1->CMD |= I2C_CMD_ABORT;
 		  xSemaphoreGiveFromISR(busySem, NULL);
@@ -466,7 +462,7 @@ void I2C1_IRQHandler(void) {
 		  else {
 			  I2C1->CMD |= I2C_CMD_ABORT;
 			  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
-			  i2c_Tx.transmissionError |= ABORT_BUSHOLD;
+			  transmissionError |= ABORT_BUSHOLD;
 			  xSemaphoreGiveFromISR(busySem, NULL);
 		  }
 	  }
@@ -499,7 +495,7 @@ void I2C1_IRQHandler(void) {
 		  // Send Data to Rx task for processing. DMA IRQ handles calculating and
 		  // posting the actual size of bytes RX'd to a separate queue.
 		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) != pdTRUE) {
-			 i2c_Tx.transmissionError |= F_QUEUE_ERR;
+			 transmissionError |= F_QUEUE_ERR;
 			 puts("Data Queue Insert Error");
 			 xSharedMemPut(i2cSharedMem, i2c_Rx);
 		  }
@@ -517,16 +513,16 @@ void I2C1_IRQHandler(void) {
   // And never latch onto each other.
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
 	  if (flags & I2C_IF_BITO) {
-		  i2c_Tx.transmissionError |= BITO_ERR;
+		  transmissionError |= BITO_ERR;
 	  }
 	  if (flags & I2C_IF_ARBLOST) {
-		  i2c_Tx.transmissionError |= ARBLOST_ERR;
+		  transmissionError |= ARBLOST_ERR;
 	  }
 	  if (flags & I2C_IF_BUSERR) {
-		  i2c_Tx.transmissionError |= BUSERR_ERR;
+		  transmissionError |= BUSERR_ERR;
 	  }
 	  if (flags & I2C_IF_CLTO) {
-		  i2c_Tx.transmissionError |= CLTO_ERR;
+		  transmissionError |= CLTO_ERR;
 	  }
 
 	  // Tell the DMA to stop.

@@ -51,18 +51,15 @@
 #include "makePrintfWork.h" // TODO remove from final version
 
 /* Defines*/
-#define I2C_ADDRESS                     0xE2 // TODO memory address table and functions.
-#define I2C_RXBUF_LEN                   256  // Buffer size TODO variable and can change.
-#define I2C_TASKPRIORITY				2    // TODO adjust as needed
+#define I2C_ADDRESS                     0xE2 // Slave Address of Device
+#define I2C_TASKPRIORITY				2    // Task priority
 #define I2C_WRITE					    0xFE // Should always be Master Trans/Slave Rec
 #define I2C_READ					    0xFF // Future Potential Functionality
 #define I2C_INT_PRIO_LEVEL				6    // Interrupt priority level
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
-#define TX_DELAY_MULTIPLIER				1    // Multiplied by portTICK_PERIOD_MS to determine wait time after transfer complete
-#define RX_INDEX_INIT					0	 // Rx Index start value/reset value
-#define ADD_BYTE_LIMIT					-1   // Used to determine whether or not we're at the end of Tx
 #define MAX_FRAME_SIZE					1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
+#define NUM_SH_MEM_BUFS					5    // Number of shared memory buffers
 
 /* cspI2CTransfer_t Error codes for transmissionError field */
 #define NO_TRANS_ERR					0x00
@@ -110,29 +107,9 @@
 					  I2C_IFC_START | \
 					  I2C_IFC_BUSERR)
 
-/*
- * @brief Structure for Tx
- * One exists in global memory for the driver, as a static volatile.
- * Members:
- * txData: Pointer to the data
- * txIndex: Index of tx
- * addr: Address of target node, supplied by CSP
- * rwBit: Usually 0 for writes only
- * len: Length of txData in bytes, provided by CSP
- * transmissionError: Error byte, bits represent potential errors, and there can be multiple errors
- * See above for the values
- */
-typedef struct {
-	uint8_t *txData;           // Pointer to the data.
-	int16_t txIndex;           // Tx Array Index
-	uint16_t transmissionError; // See below for error codes
-	uint8_t addr;              // Address, see https://www.i2c-bus.org/addressing/ WE ONLY USE 7-BIT ADDRESSSING
-	uint8_t rwBit;             // Read (0) or write (1)
-	uint8_t len;               // In the code it will be given by CSP
-} cspI2CTransfer_t;
 
-/* Transmission Structure */
-volatile cspI2CTransfer_t i2c_Tx;
+// Error Flag for Tx
+static volatile uint16_t transmissionError;
 
 // Rx Buffer Pointer
 uint8_t *i2c_Rx;
