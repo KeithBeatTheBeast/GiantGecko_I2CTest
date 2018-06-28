@@ -3,24 +3,34 @@
  *
  *  Created on: Jun 4, 2018
  *  Author: kgmills
- *  For use in the AlbertaSat Ex-Alta 2 Network Stack
+ *  For use in the AlbertaSat Ex-Alta 2 Network Stack as a Physical Layer I2C Driver
  *
- *  Purpose of this file:
- *  To store the location of constants, register locations, etc
- *  For the I2C Driver for an EFM32 Giant Gecko's I2C Driver.
- *
- *  The code has been modified from it's original form given on by the Silabs
+ *  The code has been modified from it's original form given on by the Silicon Labs
  *  Application Note:
  *  https://www.silabs.com/support/resources.ct-application-notes.ct-example-code.p-microcontrollers_32-bit-mcus
  *
  *  See "AN0011: I2C Master and Slave Operation"
+ *  Also see "AN0013: Direct Memory Access" as this I2C Physical Layer Driver is dependant on the EFM32's
+ *  DMA controller for Tx/Rx operation.
  *
- *  This file is a storage location for the register locations/data structure
- *  stored in em_i2c.h so that they can be modified as needed for devices that may have the same architecure
- *  but different register locations.
+ *  This I2C Driver for the EFM32 Giant Gecko operates as the physical layer to a CubeSat network stack
+ *	As such, the only modes of operation it supports are:
  *
- *  It also includes my own files.
+ *	MASTER TRANSMITTER
+ *	SLAVE RECEIVER
  *
+ *	The driver makes heavy use of the DMA controller within the EFM32 as well as a shared memory
+ *	FreeRTOS protocol I developed. These non-Silabs dependency files are
+ *
+ *	cspDMA_EFM32.c/h
+ *	SharedMemory.c/h
+ *
+ *	In addition, this driver requires FreeRTOS to run, and was developed on an EFM32 Giant Gecko
+ *	using the ARM Cortex-M3 microprocessor.
+ *
+ *	A different driver can be (and be) developed from this one for the
+ *	Giant Gecko with the Cortex-M4, with the double-buffered
+ *	I2C Tx/Rx and LDMA.
  */
 
 #ifndef CSPI2C_EFM32_H_

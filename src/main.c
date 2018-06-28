@@ -1,5 +1,5 @@
 /*****************************************************************************
- * @file i2c_master_slave.c
+ * @file i2c_master_slave.c (now main.c)
  * @brief I2C Demo Application
  * @author Silicon Labs
  * @version 1.06
