@@ -240,7 +240,7 @@ void setupI2C() {
 			I2C_CTRL_AUTOSN | \
 		  	I2C_CTRL_BITO_160PCC | \
 			I2C_CTRL_GIBITO | \
-			I2C_CTRL_CLTO_1024PPC; // Removed autoack
+			I2C_CTRL_CLTO_1024PPC;
 
 
 	// Only accept transmissions if it is directly talking to me.
@@ -313,14 +313,20 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 
 static void vI2CReceiveTask(void *rxQueueHandle) {
 
-	uint8_t *data;
+	uint8_t *newRxBuf, *cspBuf;
 	int16_t index;
 
 	while(1) {
-		xQueueReceive(rxDataQueue, &data, portMAX_DELAY);
+		xQueueReceive(rxDataQueue, &newRxBuf, portMAX_DELAY);
 		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
-		printf("DATA SIZE: %d; DATA: %s\n", index, data); // TODO send to upper layer
-		xSharedMemPut(i2cSharedMem, data);
+
+		cspBuf = pvPortMalloc(sizeof(uint8_t) * index);
+		strncpy(cspBuf, newRxBuf, index);
+
+		xSharedMemPut(i2cSharedMem, newRxBuf);
+
+		printf("DATA SIZE: %d; DATA: %s\n", index, cspBuf); // TODO send to upper layer
+		vPortFree(cspBuf); // TODO this will be the responsibility of the upper layer to get rid of.
 	}
 }
 
@@ -426,6 +432,7 @@ void I2C1_IRQHandler(void) {
 
 		  else {
 			  I2C1->CMD = I2C_CMD_NACK | I2C_CMD_ABORT;
+			  transmissionError |= E_QUEUE_ERR;
 		  }
 		  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IFC_BUSHOLD);
 	  }

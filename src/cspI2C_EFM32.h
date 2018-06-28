@@ -59,7 +59,7 @@
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
 #define MAX_FRAME_SIZE					1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
-#define NUM_SH_MEM_BUFS					5    // Number of shared memory buffers
+#define NUM_SH_MEM_BUFS					3    // Number of shared memory buffers
 
 /* cspI2CTransfer_t Error codes for transmissionError field */
 #define NO_TRANS_ERR					0x00
