@@ -96,6 +96,13 @@ static inline int16_t *getRxDMACtrlAddr() {
  * @brief Function called when DMA transfer is complete.
  * Enables interrupts when doing a DMA read.
  * THIS FUNCTION IS CALLED IN AN ISR CONTEXT BY THE DMA'S IRQ
+ *
+ * For details on how to recover the number of bytes that has been received,
+ * please visit the Silicon Labs Reference Manual for the
+ * EFM32 Giant Gecko with the ARM Cortex-M3 processor.
+ * https://www.silabs.com/documents/public/reference-manuals/EFM32GG-RM.pdf
+ *
+ * Chapter 8 - DMA; Pages 64-66 on the n_minus_1 data field
  *******************************************************************/
 void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 

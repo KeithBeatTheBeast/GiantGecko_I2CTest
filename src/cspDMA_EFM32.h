@@ -52,6 +52,12 @@
  * 	this value to get the # of transfers that have yet to be completed.
  * 	Then, based on the value of transfers requested, you can see how many remain.
  *
+ *	For details on how to recover the number of bytes that has been received,
+ * 	please visit the Silicon Labs Reference Manual for the
+ * 	EFM32 Giant Gecko with the ARM Cortex-M3 processor.
+ * 	https://www.silabs.com/documents/public/reference-manuals/EFM32GG-RM.pdf
+ * 	Chapter 8 - DMA; Pages 64-66 on the n_minus_1 data field
+ *
  * dmaCB is the callback structure.
  */
 #define DMA_CHANNEL_I2C_TX 				0
