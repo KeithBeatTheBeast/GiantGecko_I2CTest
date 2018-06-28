@@ -355,6 +355,7 @@ int main(void) {
 	else { puts("Creation of Rx Index Queue Successful");}
 
 	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
+	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix ASAP
 	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
 	else {puts("Creation of Shared Memory Successful");}
 

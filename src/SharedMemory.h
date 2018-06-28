@@ -20,6 +20,8 @@ typedef QueueHandle_t SharedMem_t;
 
 SharedMem_t xSharedMemoryCreate(size_t blockSize, int16_t numBlocks);
 
+SharedMem_t xSharedMemoryCreateStatic(void** staticArrayPtr, int16_t numBlocks);
+
 void *pSharedMemGet(SharedMem_t shMem);
 void *pSharedMemGetFromISR(SharedMem_t shMem, BaseType_t *pxHTW);
 

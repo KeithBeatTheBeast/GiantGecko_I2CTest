@@ -41,11 +41,31 @@ SharedMem_t xSharedMemoryCreate(size_t blockSize, int16_t numBlocks) {
 				vPortFree(initPointers[j]); // Free all blocks up to that point
 			}
 			vPortFree(initPointers);
-			return NULL; // Fale
+			return NULL; // Fail
 		}
 	}
 	vPortFree(initPointers);
 	return shMem; // Return handle otherwise
+}
+
+SharedMem_t xSharedMemoryCreateStatic(void** staticArrayPtr, int16_t numBlocks) {
+
+	// Make handle, return NULL if not possible
+	SharedMem_t shMem = xQueueCreate(numBlocks, sizeof(void*));
+
+	if (shMem == NULL) {
+		return NULL;
+	}
+
+	// Iterate over blocks, adding their pointers to the queue
+	for (int16_t i = 0; i < numBlocks; i++) {
+		if (xQueueSend(shMem, &staticArrayPtr[i], QUEUE_TO) != pdTRUE) {
+			vQueueDelete(shMem);
+			return NULL; // If one fails, they all fail.
+		}
+	}
+
+	return shMem;
 }
 
 /*

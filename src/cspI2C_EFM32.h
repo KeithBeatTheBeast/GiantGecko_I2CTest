@@ -126,6 +126,6 @@ static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
 static SharedMem_t		 i2cSharedMem;
 
 // The statically allocated shared memory
-///static uint8_t staticSharedMemBufs[NUM_SH_MEM_BUFS][MAX_FRAME_SIZE];
+//uint8_t staticSharedMemBufs[NUM_SH_MEM_BUFS][MAX_FRAME_SIZE];
 
 #endif /* CSPI2C_EFM32_H_ */
