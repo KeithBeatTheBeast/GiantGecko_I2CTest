@@ -135,132 +135,9 @@ static void vI2CReceiveTask(void *handle) {
 }
 
 /******************************************************************************
- * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
+ * @brief Setup the DMA channels for I2C
  *****************************************************************************/
-uint8_t i2c_FreeRTOS_Structs_Init() {
-
-	uint8_t err = NO_INIT_ERR;
-
-	// Create the Tx timeout semaphore.
-	busySem = xSemaphoreCreateBinary();
-	if (busySem == NULL) {err |= TX_SEM_INIT_ERR;}
-
-	// Create the rx queue and report on it
-	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
-	if (rxDataQueue == NULL) {err  |= RX_DATA_INIT_ERR; }
-
-	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
-	if (rxIndexQueue == NULL) {err |= RX_INDEX_INIT_ERR;}
-
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
-	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
-	if (i2cSharedMem == NULL) {err |= SH_MEM_INIT_ERR;}
-
-	return err;
-}
-
-/**************************************************************************//**
- * @brief  Main function
- * Main is called from __iar_program_start, see assembly startup file
- *****************************************************************************/
-int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
-
-	// Error Code to be passed back.
-	int err = NO_INIT_ERR;
-
-	err |= i2c_FreeRTOS_Structs_Init();
-
-	// Decision block for which I2C module to use.
-	// First we decide which registers
-	// Then enable the clock for the appropriate line.
-	// Then decide which IRQ to enable TODO hard coded for 1 on EFM32 with M3
-	enum IRQn I2C_IRQ;
-	uint8_t I2C_Port, I2C_SDA, I2C_SCL;
-	if (handle == 0){
-		I2CRegs = I2C0;
-		CMU_ClockEnable(cmuClock_I2C0, true);
-		I2C_IRQ = I2C0_IRQn;
-
-		GPIO_PinModeSet(I2C0_Ports, I2C0_SDA, gpioModeWiredAndPullUpFilter, 1);
-		GPIO_PinModeSet(I2C0_Ports, I2C0_SCL, gpioModeWiredAndPullUpFilter, 1);
-	}
-
-	else if (handle == 1) {
-		I2CRegs = I2C1;
-		CMU_ClockEnable(cmuClock_I2C1, true);
-		I2C_IRQ = I2C1_IRQn;
-
-		GPIO_PinModeSet(I2C1_Ports, I2C1_SDA, gpioModeWiredAndPullUpFilter, 1);
-		GPIO_PinModeSet(I2C1_Ports, I2C1_SCL, gpioModeWiredAndPullUpFilter, 1);
-	}
-
-	else { return err |= UNDEF_HANDLE;}
-
-	/*
-	* Changing the priority of I2C1 IRQ.
-	* It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
-	* defined in FreeRTOSConfig.h
-	* Currently, that is set to 5.
-	* The I2C priority level goes to 6, and the DMA 5.
-	*/
-	NVIC_SetPriority(I2C_IRQ, I2C_INT_PRIO_LEVEL);
-
-	if (speed == 100) {
-		I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
-		I2C_Init(I2CRegs, &i2cInit);
-	}
-
-	else if (speed == 400) {
-		I2C_Init_TypeDef i2cInit = { \
-			true, \
-			true, \
-			0, \
-			I2C_FREQ_FAST_MAX, \
-			i2cClockHLRAsymetric \
-		};
-		I2C_Init(I2CRegs, &i2cInit);
-	}
-
-	// Driver does not support 1Mbit/s datarate it just does not work.
-//	else if (speed == 1000) {
-//		I2C_Init_TypeDef i2cInit = { \
-//				true, \
-//				true, \
-//				0, \
-//				I2C_FREQ_FASTPLUS_MAX, \
-//				i2cClockHLRAsymetric \
-//			};
-//		I2C_Init(I2CRegs, &i2cInit);
-//	}
-
-	else {
-		return err |= UNSUPPORTED_SPEED;
-	}
-
-	/* Enable pins at location 1 */
-	I2CRegs->ROUTE = I2C_ROUTE_SDAPEN |
-			I2C_ROUTE_SCLPEN |
-			(I2C_ROUTE_LOC << _I2C_ROUTE_LOCATION_SHIFT);
-
-	/* Initializing the I2C */
-
-	/* Setting up to enable slave mode */
-	I2CRegs->SADDR = opt_addr;
-	I2CRegs->CTRL |= csp_I2C_ctrl;
-	I2CRegs->SADDRMASK |= CSP_SADDR_MASK;
-
-	// Set Rx index to zero.
-	i2c_RxInProgress = false;
-
-	// We do an operation on the first Rx.
-	firstRx = true;
-
-	// Enable interrupts
-	I2C_IntClear(I2CRegs, i2c_IFC_flags);
-	I2C_IntEnable(I2CRegs, i2c_IEN_flags);
-	NVIC_EnableIRQ(I2C_IRQ);
-
-	/* We now setup the DMA components for I2C */
+void i2cDMA_ChannelInit(int TX, int RX) {
 
 	/* Initialization Struct, and the Tx Structs */
 	DMA_CfgChannel_TypeDef  txChannelConfig;
@@ -302,6 +179,127 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	rxDescriptorConfig.arbRate = dmaArbitrate1;
 	rxDescriptorConfig.hprot   = 0;
 	DMA_CfgDescr(DMA_CHANNEL_I2C_RX, true, &rxDescriptorConfig);
+}
+
+/******************************************************************************
+ * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
+ *****************************************************************************/
+uint8_t i2c_FreeRTOS_Structs_Init() {
+
+	uint8_t err = NO_INIT_ERR;
+
+	// Create the Tx timeout semaphore.
+	busySem = xSemaphoreCreateBinary();
+	if (busySem == NULL) {err |= TX_SEM_INIT_ERR;}
+
+	// Create the rx queue and report on it
+	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
+	if (rxDataQueue == NULL) {err  |= RX_DATA_INIT_ERR; }
+
+	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
+	if (rxIndexQueue == NULL) {err |= RX_INDEX_INIT_ERR;}
+
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
+	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
+	if (i2cSharedMem == NULL) {err |= SH_MEM_INIT_ERR;}
+
+	return err;
+}
+
+/**************************************************************************//**
+ * @brief  Main function
+ * Main is called from __iar_program_start, see assembly startup file
+ *****************************************************************************/
+int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
+
+	// Error Code to be passed back.
+	int err = NO_INIT_ERR;
+
+	err |= i2c_FreeRTOS_Structs_Init();
+
+	// Decision block for which I2C module to use.
+	// First we decide which registers
+	// Then enable the clock for the appropriate line.
+	// Then decide which IRQ to enable TODO hard coded for 1 on EFM32 with M3
+	// Then enable pins
+	// Then init DMA channels
+	enum IRQn I2C_IRQ;
+	uint8_t I2C_Port, I2C_SDA, I2C_SCL;
+	if (handle == 0){
+		I2CRegs = I2C0;
+		CMU_ClockEnable(cmuClock_I2C0, true);
+		I2C_IRQ = I2C0_IRQn;
+
+		GPIO_PinModeSet(I2C0_Ports, I2C0_SDA, gpioModeWiredAndPullUpFilter, 1);
+		GPIO_PinModeSet(I2C0_Ports, I2C0_SCL, gpioModeWiredAndPullUpFilter, 1);
+
+		i2cDMA_ChannelInit(DMAREQ_I2C0_TXBL, DMAREQ_I2C0_RXDATAV);
+	}
+
+	else if (handle == 1) {
+		I2CRegs = I2C1;
+		CMU_ClockEnable(cmuClock_I2C1, true);
+		I2C_IRQ = I2C1_IRQn;
+
+		GPIO_PinModeSet(I2C1_Ports, I2C1_SDA, gpioModeWiredAndPullUpFilter, 1);
+		GPIO_PinModeSet(I2C1_Ports, I2C1_SCL, gpioModeWiredAndPullUpFilter, 1);
+
+		i2cDMA_ChannelInit(DMAREQ_I2C1_TXBL, DMAREQ_I2C1_RXDATAV);
+	}
+
+	else { return err |= UNDEF_HANDLE;}
+
+	/*
+	* Changing the priority of I2C1 IRQ.
+	* It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
+	* defined in FreeRTOSConfig.h
+	* Currently, that is set to 5.
+	* The I2C priority level goes to 6, and the DMA 5.
+	*/
+	NVIC_SetPriority(I2C_IRQ, I2C_INT_PRIO_LEVEL);
+
+	if (speed == 100) {
+		I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
+		I2C_Init(I2CRegs, &i2cInit);
+	}
+
+	else if (speed == 400) {
+		I2C_Init_TypeDef i2cInit = { \
+			true, \
+			true, \
+			0, \
+			I2C_FREQ_FAST_MAX, \
+			i2cClockHLRAsymetric \
+		};
+		I2C_Init(I2CRegs, &i2cInit);
+	}
+
+	else {
+		return err |= UNSUPPORTED_SPEED;
+	}
+
+	/* Enable pins at location 1 */
+	I2CRegs->ROUTE = I2C_ROUTE_SDAPEN |
+			I2C_ROUTE_SCLPEN |
+			(I2C_ROUTE_LOC << _I2C_ROUTE_LOCATION_SHIFT);
+
+	/* Initializing the I2C */
+
+	/* Setting up to enable slave mode */
+	I2CRegs->SADDR = opt_addr;
+	I2CRegs->CTRL |= csp_I2C_ctrl;
+	I2CRegs->SADDRMASK |= CSP_SADDR_MASK;
+
+	// Set Rx index to zero.
+	i2c_RxInProgress = false;
+
+	// We do an operation on the first Rx.
+	firstRx = true;
+
+	// Enable interrupts
+	I2C_IntClear(I2CRegs, i2c_IFC_flags);
+	I2C_IntEnable(I2CRegs, i2c_IEN_flags);
+	NVIC_EnableIRQ(I2C_IRQ);
 
 	// We're starting/restarting the board, so it assume the bus is busy
 	// We need to either have a clock-high (BITO) timeout, or issue an abort

@@ -208,6 +208,8 @@ static void vI2CTransferTask(void *txQueueHandle);
 
 static void vI2CReceiveTask(void *handle);
 
+void i2cDMA_ChannelInit(int TX, int RX);
+
 /******************************************************************************
  * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
  *****************************************************************************/
