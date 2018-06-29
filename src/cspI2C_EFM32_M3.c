@@ -70,13 +70,108 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 }
 
 /**************************************************************************//**
- * @brief  Setup I2C
+ * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-void cspI2C_Init() {
+static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle and semaphore handle
 
-	printf("%x\n", I2C1);
+	uint32_t c = 0;
+	while (1) {
+
+		uint8_t *txData;
+		// TODO pend queue
+		if (c++ % 2 == 0) {txData  = tempTxBuf0;} // TODO temp, remove.
+		else {txData  = tempTxBuf1;}
+		transmissionError = NO_TRANS_ERR; // Set error flag to zero.
+
+		I2CRegs->CMD |= I2C_CMD_CLEARTX;
+
+		// Load address. TODO format data from queue
+		I2CRegs->TXDATA = I2C_ADDRESS & I2C_WRITE;
+
+		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
+				true,
+				false,
+				(void*)&(I2CRegs->TXDATA),
+				(void*)txData,
+				20 - 1); // TODO get from upper layer.
+
+		// Issue start condition
+		I2CRegs->CMD |= I2C_CMD_START;
+
+		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
+		// The reason why the semaphore is here is because the function
+		// will eventually become a task where at the top, we pend a queue.
+		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
+			I2CRegs->CMD = I2C_CMD_ABORT;
+			transmissionError |= TIMEOUT_ERR;
+		}
+
+		// Error happened. TODO send to upper layer
+		if (transmissionError > 0) {
+			if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2CRegs->IF);}
+			I2CRegs->CMD |= I2C_CMD_ABORT;
+			vTaskDelay(portTICK_PERIOD_MS * 0.5);
+		}
+	}
+}
+
+static void vI2CReceiveTask(void *handle) {
+
+	uint8_t *newRxBuf, *cspBuf;
+	int16_t index;
+
+	while(1) {
+		xQueueReceive(rxDataQueue, &newRxBuf, portMAX_DELAY);
+		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
+
+		cspBuf = pvPortMalloc(sizeof(uint8_t) * index);
+		memcpy(cspBuf, newRxBuf, index);
+
+		xSharedMemPut(i2cSharedMem, newRxBuf);
+
+		printf("DATA SIZE: %d; DATA: %s\n", index, cspBuf); // TODO send to upper layer
+		vPortFree(cspBuf); // TODO this will be the responsibility of the upper layer to get rid of.
+	}
+}
+
+/******************************************************************************
+ * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
+ *****************************************************************************/
+uint8_t i2c_FreeRTOS_Structs_Init() {
+
+	uint8_t err = NO_INIT_ERR;
+
+	// Create the Tx timeout semaphore.
+	busySem = xSemaphoreCreateBinary();
+	if (busySem == NULL) {err |= TX_SEM_INIT_ERR;}
+
+	// Create the rx queue and report on it
+	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
+	if (rxDataQueue == NULL) {err  |= RX_DATA_INIT_ERR; }
+
+	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
+	if (rxIndexQueue == NULL) {err |= RX_INDEX_INIT_ERR;}
+
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
+	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
+	if (i2cSharedMem == NULL) {err |= SH_MEM_INIT_ERR;}
+
+	return err;
+}
+
+/**************************************************************************//**
+ * @brief  Main function
+ * Main is called from __iar_program_start, see assembly startup file
+ *****************************************************************************/
+int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
+
+	// Error Code to be passed back.
+	int err = NO_INIT_ERR;
+
+	err |= i2c_FreeRTOS_Structs_Init();
+
 	I2CRegs = I2C1;
-	printf("%x\n", I2CRegs);
+
 	/* Enabling clock to the I2C*/
 	CMU_ClockEnable(cmuClock_I2C1, true);
 
@@ -113,7 +208,7 @@ void cspI2C_Init() {
 	I2CRegs->SADDR = I2C_ADDRESS;
 	I2CRegs->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOSN | \
-		  	I2C_CTRL_BITO_160PCC | \
+			I2C_CTRL_BITO_160PCC | \
 			I2C_CTRL_GIBITO | \
 			I2C_CTRL_CLTO_1024PPC;
 
@@ -180,110 +275,12 @@ void cspI2C_Init() {
 	if (I2CRegs->STATE & I2C_STATE_BUSY) {
 		I2CRegs->CMD = I2C_CMD_ABORT;
 	}
-}
-
-/**************************************************************************//**
- * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
- *****************************************************************************/
-static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle and semaphore handle
-
-	uint32_t c = 0;
-	while (1) {
-
-		uint8_t *txData;
-		// TODO pend queue
-		if (c++ % 2 == 0) {txData  = tempTxBuf0;} // TODO temp, remove.
-		else {txData  = tempTxBuf1;}
-		transmissionError = NO_TRANS_ERR; // Set error flag to zero.
-
-		I2CRegs->CMD |= I2C_CMD_CLEARTX;
-
-		// Load address. TODO format data from queue
-		I2CRegs->TXDATA = I2C_ADDRESS & I2C_WRITE;
-
-		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
-				true,
-				false,
-				(void*)&(I2CRegs->TXDATA),
-				(void*)txData,
-				20 - 1); // TODO get from upper layer.
-
-		// Issue start condition
-		I2CRegs->CMD |= I2C_CMD_START;
-
-		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
-		// The reason why the semaphore is here is because the function
-		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
-			I2CRegs->CMD = I2C_CMD_ABORT;
-			transmissionError |= TIMEOUT_ERR;
-		}
-
-		// Error happened. TODO send to upper layer
-		if (transmissionError > 0) {
-			if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2CRegs->IF);}
-			I2CRegs->CMD |= I2C_CMD_ABORT;
-			vTaskDelay(portTICK_PERIOD_MS * 0.5);
-		}
-	}
-}
-
-static void vI2CReceiveTask(void *handle) {
-
-	uint8_t *newRxBuf, *cspBuf;
-	int16_t index;
-
-	while(1) {
-		xQueueReceive(rxDataQueue, &newRxBuf, portMAX_DELAY);
-		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
-
-		cspBuf = pvPortMalloc(sizeof(uint8_t) * index);
-		memcpy(cspBuf, newRxBuf, index);
-
-		xSharedMemPut(i2cSharedMem, newRxBuf);
-
-		printf("DATA SIZE: %d; DATA: %s\n", index, cspBuf); // TODO send to upper layer
-		vPortFree(cspBuf); // TODO this will be the responsibility of the upper layer to get rid of.
-	}
-}
-
-/**************************************************************************//**
- * @brief  Main function
- * Main is called from __iar_program_start, see assembly startup file
- *****************************************************************************/
-void i2cTempmain(void) {
-
-	// Create the semaphore and report on it.
-	busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initializer
-	if (busySem == NULL) { puts("Creation of Busy Semaphore Failed!"); }
-	else { puts("Creation of Busy Semaphore Successful!");}
-
-	// Create the rx queue and report on it
-	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
-	if (rxDataQueue == NULL) { puts("Creation of Rx Data Queue Failed!"); } // TODO replace with error statements to init
-	else { puts("Creation of Rx Data Queue Successful");}
-
-	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
-	if (rxIndexQueue == NULL) { puts("Creation of Rx Index Queue Failed!"); } // TODO replace with error statements to init
-	else { puts("Creation of Rx Index Queue Successful");}
-
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
-	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix ASAP
-	if (i2cSharedMem == NULL) {puts("Creation of Shared Memory Failed!"); }
-	else {puts("Creation of Shared Memory Successful");}
-
-	/* Setting up DMA Controller */
-	cspDMA_Init(CSP_HPROT);
-
-	/* Setting up i2c */
-	cspI2C_Init();
 
 	// Create I2C Tasks
 	xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 	xTaskCreate(vI2CReceiveTask, (const char *) "I2CRegs_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
-	// Start Scheduler TODO externalize to another API
-	vTaskStartScheduler();
+	return err;
 }
 
 /*****************************************************************************

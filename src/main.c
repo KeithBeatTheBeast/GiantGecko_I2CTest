@@ -10,5 +10,10 @@
 int main(void) {
 	// Use this to enable printfs.
 	SWO_SetupForPrint();
-	i2cTempmain();
+
+	/* Setting up DMA Controller */
+	cspDMA_Init(CSP_HPROT);
+
+	csp_i2c_init(0, 0, 0);
+	vTaskStartScheduler();
 }

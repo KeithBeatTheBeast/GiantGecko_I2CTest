@@ -102,6 +102,13 @@ static volatile uint16_t transmissionError;
 #define F_QUEUE_ERR						0x80
 #define ABORT_BUSHOLD					0x100
 
+/* Error Codes for the initialization functions. */
+#define NO_INIT_ERR						0x00
+#define TX_SEM_INIT_ERR					0x01
+#define RX_DATA_INIT_ERR				0x02
+#define RX_INDEX_INIT_ERR				0x04
+#define SH_MEM_INIT_ERR					0x08
+
 /*
  * ISR Interrupt Enable Lines
  * What conditions in the register
@@ -176,18 +183,18 @@ static inline int16_t *getRxDMACtrlAddr();
 void i2cTransferComplete(unsigned int channel, bool primary, void *user);
 
 /**************************************************************************//**
- * @brief  Setup I2C
- *****************************************************************************/
-void cspI2C_Init();
-
-/**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
 static void vI2CTransferTask(void *txQueueHandle);
 
 static void vI2CReceiveTask(void *handle);
 
-void i2cTempmain(void);
+/******************************************************************************
+ * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
+ *****************************************************************************/
+uint8_t i2c_FreeRTOS_Structs_Init();
+
+int csp_i2c_init(uint8_t opt_addr, int handle, int speed);
 
 /*****************************************************************************
  * @brief I2C Interrupt Handler.
