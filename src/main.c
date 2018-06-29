@@ -320,7 +320,7 @@ static void vI2CReceiveTask(void *rxQueueHandle) {
 		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
 
 		cspBuf = pvPortMalloc(sizeof(uint8_t) * index);
-		strncpy(cspBuf, newRxBuf, index);
+		memcpy(cspBuf, newRxBuf, index);
 
 		xSharedMemPut(i2cSharedMem, newRxBuf);
 

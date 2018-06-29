@@ -41,6 +41,7 @@
  * Oscillators, GPIO pins, DMA and I2C
  */
 #include <stdbool.h>
+#include <string.h>
 #include "em_i2c.h"
 #include "em_cmu.h"
 #include "em_gpio.h"
@@ -58,7 +59,7 @@
 #include "cspDMA_EFM32.h"
 
 // Files I use to make printf(...) work on the EFM32 Giant Gecko using Simplicity Studio.
-#include "makePrintfWork.h" // TODO remove from final version
+#include "makePrintfWork.h" // TODO remove from release version
 
 /* Defines*/
 #define I2C_ADDRESS                     0xE2 // Slave Address of Device
