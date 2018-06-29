@@ -108,6 +108,7 @@ static volatile uint16_t transmissionError;
 #define RX_DATA_INIT_ERR				0x02
 #define RX_INDEX_INIT_ERR				0x04
 #define SH_MEM_INIT_ERR					0x08
+#define UNDEF_HANDLE					0x10
 
 /*
  * ISR Interrupt Enable Lines

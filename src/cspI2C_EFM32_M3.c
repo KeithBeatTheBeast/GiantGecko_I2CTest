@@ -170,10 +170,27 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
 	err |= i2c_FreeRTOS_Structs_Init();
 
-	I2CRegs = I2C1;
+	// Select Structure where Registers are stored based on handle.
+	// Also initialize clocks and NVIC
 
-	/* Enabling clock to the I2C*/
-	CMU_ClockEnable(cmuClock_I2C1, true);
+	enum IRQn I2C_IRQ;
+	if (handle == 0){
+		I2CRegs = I2C0;
+
+		/* Enabling clock to the I2C*/
+		CMU_ClockEnable(cmuClock_I2C0, true);
+		I2C_IRQ = I2C0_IRQn;
+	}
+
+	else if (handle == 1) {
+		I2CRegs = I2C1;
+
+		/* Enabling clock to the I2C*/
+		CMU_ClockEnable(cmuClock_I2C1, true);
+		I2C_IRQ = I2C1_IRQn;
+	}
+
+	else { return err |= UNDEF_HANDLE;}
 
 	/*
 	* Changing the priority of I2C1 IRQ.
@@ -182,7 +199,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	* Currently, that is set to 5.
 	* The I2C priority level goes to 6, and the DMA 5.
 	*/
-	NVIC_SetPriority(I2C1_IRQn, I2C_INT_PRIO_LEVEL);
+	NVIC_SetPriority(I2C_IRQ, I2C_INT_PRIO_LEVEL);
 
 	I2C_Init_TypeDef i2cInit = { \
 			true, \
@@ -225,7 +242,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	// Enable interrupts
 	I2C_IntClear(I2CRegs, i2c_IFC_flags);
 	I2C_IntEnable(I2CRegs, i2c_IEN_flags);
-	NVIC_EnableIRQ(I2C1_IRQn);
+	NVIC_EnableIRQ(I2C_IRQ);
 
 	/* We now setup the DMA components for I2C */
 
