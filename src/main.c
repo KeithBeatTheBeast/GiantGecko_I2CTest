@@ -14,6 +14,6 @@ int main(void) {
 	/* Setting up DMA Controller */
 	cspDMA_Init(CSP_HPROT);
 
-	csp_i2c_init(0, 1, 0);
+	csp_i2c_init(0xE2, 1, 400);
 	vTaskStartScheduler();
 }

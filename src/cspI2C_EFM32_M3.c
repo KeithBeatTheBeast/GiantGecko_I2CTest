@@ -86,7 +86,7 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		I2CRegs->CMD |= I2C_CMD_CLEARTX;
 
 		// Load address. TODO format data from queue
-		I2CRegs->TXDATA = I2C_ADDRESS & I2C_WRITE;
+		I2CRegs->TXDATA = 0xE2 & I2C_WRITE;
 
 		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
 				true,
@@ -170,24 +170,30 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
 	err |= i2c_FreeRTOS_Structs_Init();
 
-	// Select Structure where Registers are stored based on handle.
-	// Also initialize clocks and NVIC
-
+	// Decision block for which I2C module to use.
+	// First we decide which registers
+	// Then enable the clock for the appropriate line.
+	// Then decide which IRQ to enable TODO hard coded for 1 on EFM32 with M3
 	enum IRQn I2C_IRQ;
+	uint8_t I2C_Port, I2C_SDA, I2C_SCL;
 	if (handle == 0){
 		I2CRegs = I2C0;
-
-		/* Enabling clock to the I2C*/
 		CMU_ClockEnable(cmuClock_I2C0, true);
 		I2C_IRQ = I2C0_IRQn;
+
+		I2C_Port = I2C0_Ports;
+		I2C_SDA = I2C0_SDA;
+		I2C_SCL = I2C0_SCL;
 	}
 
 	else if (handle == 1) {
 		I2CRegs = I2C1;
-
-		/* Enabling clock to the I2C*/
 		CMU_ClockEnable(cmuClock_I2C1, true);
 		I2C_IRQ = I2C1_IRQn;
+
+		I2C_Port = I2C1_Ports;
+		I2C_SDA = I2C1_SDA;
+		I2C_SCL = I2C1_SCL;
 	}
 
 	else { return err |= UNDEF_HANDLE;}
@@ -201,28 +207,51 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	*/
 	NVIC_SetPriority(I2C_IRQ, I2C_INT_PRIO_LEVEL);
 
-	I2C_Init_TypeDef i2cInit = { \
+	if (speed == 100) {
+		I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
+		I2C_Init(I2CRegs, &i2cInit);
+	}
+
+	else if (speed == 400) {
+		I2C_Init_TypeDef i2cInit = { \
 			true, \
 			true, \
 			0, \
 			I2C_FREQ_FAST_MAX, \
 			i2cClockHLRAsymetric \
 		};
+		I2C_Init(I2CRegs, &i2cInit);
+	}
+
+	// Driver does not support 1Mbit/s datarate it just does not work.
+//	else if (speed == 1000) {
+//		I2C_Init_TypeDef i2cInit = { \
+//				true, \
+//				true, \
+//				0, \
+//				I2C_FREQ_FASTPLUS_MAX, \
+//				i2cClockHLRAsymetric \
+//			};
+//		I2C_Init(I2CRegs, &i2cInit);
+//	}
+
+	else {
+		return err |= UNSUPPORTED_SPEED;
+	}
 
 	/* Using PC4 (SDA) and PC5 (SCL) */
-	GPIO_PinModeSet(gpioPortC, 4, gpioModeWiredAndPullUpFilter, 1);
-	GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
+	GPIO_PinModeSet(I2C_Port, I2C_SDA, gpioModeWiredAndPullUpFilter, 1);
+	GPIO_PinModeSet(I2C_Port, I2C_SCL, gpioModeWiredAndPullUpFilter, 1);
 
 	/* Enable pins at location 1 */
 	I2CRegs->ROUTE = I2C_ROUTE_SDAPEN |
 			I2C_ROUTE_SCLPEN |
-			(0 << _I2C_ROUTE_LOCATION_SHIFT);
+			(I2C_ROUTE_LOC << _I2C_ROUTE_LOCATION_SHIFT);
 
 	/* Initializing the I2C */
-	I2C_Init(I2CRegs, &i2cInit);
 
 	/* Setting up to enable slave mode */
-	I2CRegs->SADDR = I2C_ADDRESS;
+	I2CRegs->SADDR = opt_addr;
 	I2CRegs->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOSN | \
 			I2C_CTRL_BITO_160PCC | \
@@ -231,7 +260,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
 
 	// Only accept transmissions if it is directly talking to me.
-	I2CRegs->SADDRMASK |= 0x7F;
+	I2CRegs->SADDRMASK |= CSP_SADDR_MASK;
 
 	// Set Rx index to zero.
 	i2c_RxInProgress = false;

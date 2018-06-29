@@ -77,7 +77,7 @@
 #include "SharedMemory.h"
 
 /* Defines*/
-#define I2C_ADDRESS                     0xE2 // Slave Address of Device
+#define CSP_SADDR_MASK					0x7F // Slave Address Mask
 #define I2C_TASKPRIORITY				2    // Task priority
 #define I2C_WRITE					    0xFE // Should always be Master Trans/Slave Rec
 #define I2C_READ					    0xFF // Future Potential Functionality
@@ -86,6 +86,13 @@
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
 #define MAX_FRAME_SIZE					1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
 #define NUM_SH_MEM_BUFS					3    // Number of shared memory buffers
+#define I2C0_Ports						gpioPortC
+#define I2C0_SDA						5 // I2C0 ports are a placeholder since the EFM32 has nothing for it
+#define I2C0_SCL						4
+#define I2C1_Ports						gpioPortC
+#define I2C1_SCL						5
+#define I2C1_SDA						4
+#define I2C_ROUTE_LOC					0
 
 // Error Flag for Tx
 static volatile uint16_t transmissionError;
@@ -109,6 +116,7 @@ static volatile uint16_t transmissionError;
 #define RX_INDEX_INIT_ERR				0x04
 #define SH_MEM_INIT_ERR					0x08
 #define UNDEF_HANDLE					0x10
+#define UNSUPPORTED_SPEED				0x20
 
 /*
  * ISR Interrupt Enable Lines
@@ -145,6 +153,7 @@ static volatile uint16_t transmissionError;
 					  I2C_IFC_START | \
 					  I2C_IFC_BUSERR)
 
+// Pointer to structure where the I2C Registers are found. Assigned at runtime depending on module
 I2C_TypeDef *I2CRegs;
 
 // Rx Buffer - Constantly changes but needed for ISR.
