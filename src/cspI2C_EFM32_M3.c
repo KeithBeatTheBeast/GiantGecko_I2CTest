@@ -10,10 +10,6 @@
 
 #include "cspI2C_EFM32_M3.h"
 
-// Buffers++
-uint8_t tempTxBuf0[] = "let go of my gecko?";
-uint8_t tempTxBuf1[] = "LET_GO_OF_MY_GECKO!";
-
 /********************************************************************
  * @brief Inline function for calculating the address of the
  * CTRL register of the RX Channel's Descriptor
@@ -69,52 +65,6 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	}
 }
 
-/**************************************************************************//**
- * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
- *****************************************************************************/
-static void vI2CTransferTask(void *nothing) {
-
-	uint32_t c = 0;
-	while (1) {
-
-		uint8_t *txData;
-		// TODO pend queue
-		if (c++ % 2 == 0) {txData  = tempTxBuf0;} // TODO temp, remove.
-		else {txData  = tempTxBuf1;}
-		transmissionError = NO_TRANS_ERR; // Set error flag to zero.
-
-		I2CRegs->CMD |= I2C_CMD_CLEARTX;
-
-		// Load address. TODO format data from queue
-		I2CRegs->TXDATA = 0xE2 & I2C_WRITE;
-
-		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
-				true,
-				false,
-				(void*)&(I2CRegs->TXDATA),
-				(void*)txData,
-				20 - 1); // TODO get from upper layer.
-
-		// Issue start condition
-		I2CRegs->CMD |= I2C_CMD_START;
-
-		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
-		// The reason why the semaphore is here is because the function
-		// will eventually become a task where at the top, we pend a queue.
-		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
-			I2CRegs->CMD = I2C_CMD_ABORT;
-			transmissionError |= TIMEOUT_ERR;
-		}
-
-		// Error happened. TODO send to upper layer
-		if (transmissionError > 0) {
-			if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2CRegs->IF);}
-			I2CRegs->CMD |= I2C_CMD_ABORT;
-			vTaskDelay(portTICK_PERIOD_MS * 0.5);
-		}
-	}
-}
-
 /************************************************************
  * @brief Function CSP calls to send.
  ***********************************************************/
@@ -137,7 +87,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 				true,
 				false,
 				(void*)&(I2CRegs->TXDATA),
-				(void*)frame->data,
+				(void*)&(frame->data),
 				frame->len - 1);
 
 		// Issue start condition
@@ -358,8 +308,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		I2CRegs->CMD = I2C_CMD_ABORT;
 	}
 
-	// Create I2C Tasks TODO get rid of TX task
-	xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	// Create I2C Rx Task
 	if (xTaskCreate(vI2CReceiveTask, (const char *) "I2CRegs_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL) \
 			!= pdPASS) { err |= RX_TASK_CREATE_FAIL;}
 

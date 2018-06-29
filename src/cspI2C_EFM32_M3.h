@@ -214,11 +214,6 @@ static inline int16_t *getRxDMACtrlAddr();
  *******************************************************************/
 void i2cTransferComplete(unsigned int channel, bool primary, void *user);
 
-/**************************************************************************//**
- * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
- *****************************************************************************/
-static void vI2CTransferTask(void *txQueueHandle);
-
 int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout);
 
 static void vI2CReceiveTask(void *handle);
