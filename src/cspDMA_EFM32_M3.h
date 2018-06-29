@@ -36,6 +36,7 @@
 #define BASE_RAW_SIZE					256
 #define ALIGN_MASK						255
 #define CSP_HPROT						0
+#define DMA_INT_PRIO_LEVEL				5
 static DMA_CB_TypeDef 					dmaCB;
 
 /*

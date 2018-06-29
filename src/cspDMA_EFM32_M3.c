@@ -61,5 +61,15 @@ void cspDMA_Init(uint8_t hprot) {
 	/* Configure and enable the DMA controller */
 	DMA->CONFIG = (hprot << _DMA_CONFIG_CHPROT_SHIFT)
                 | DMA_CONFIG_EN;
+
+	/*
+	* Changing the priority of DMA IRQ to use FreeRTOS functions.
+	* It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
+	* defined in FreeRTOSConfig.h
+	* Currently, that is set to 5.
+	* I make the DMA have a higher priority than the I2C interrupt.
+	* That, originally, is how it worked.
+	*/
+	NVIC_SetPriority(DMA_IRQn, DMA_INT_PRIO_LEVEL);
 }
 

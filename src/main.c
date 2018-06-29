@@ -137,65 +137,6 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	}
 }
 
-/******************************************************************************
- * @brief	Setup DMA Controller
- *****************************************************************************/
-void setupDMA() {
-
-	/* Initialization Struct, and the Tx Structs */
-	DMA_CfgChannel_TypeDef  txChannelConfig;
-	DMA_CfgDescr_TypeDef	txDescriptorConfig;
-
-	DMA_CfgChannel_TypeDef  rxChannelConfig;
-	DMA_CfgDescr_TypeDef	rxDescriptorConfig;
-
-	cspDMA_Init(CSP_HPROT);
-
-	/* Setup call-back function */
-	dmaCB.cbFunc  = i2cTransferComplete;
-	dmaCB.userPtr = NULL;
-
-	/* Setting up TX channel */
-	txChannelConfig.highPri   = true;
-	txChannelConfig.enableInt = true;
-	txChannelConfig.select    = DMAREQ_I2C1_TXBL;
-	txChannelConfig.cb        = &dmaCB;
-	DMA_CfgChannel(DMA_CHANNEL_I2C_TX, &txChannelConfig);
-
-	/* Setting up TX channel descriptor */
-	txDescriptorConfig.dstInc  = dmaDataIncNone;
-	txDescriptorConfig.srcInc  = dmaDataInc1;
-	txDescriptorConfig.size    = dmaDataSize1;
-	txDescriptorConfig.arbRate = dmaArbitrate1;
-	txDescriptorConfig.hprot   = 0;
-	DMA_CfgDescr(DMA_CHANNEL_I2C_TX, true, &txDescriptorConfig);
-
-	/* Setting up RX channel */
-	rxChannelConfig.highPri    = true;
-	rxChannelConfig.enableInt  = true;
-	rxChannelConfig.select     = DMAREQ_I2C1_RXDATAV;
-	rxChannelConfig.cb 		   = &dmaCB;
-	DMA_CfgChannel(DMA_CHANNEL_I2C_RX, &rxChannelConfig);
-
-	/* Setting up RX channel descriptor */
-	rxDescriptorConfig.dstInc  = dmaDataInc1;
-	rxDescriptorConfig.srcInc  = dmaDataIncNone;
-	rxDescriptorConfig.size    = dmaDataSize1;
-	rxDescriptorConfig.arbRate = dmaArbitrate1;
-	rxDescriptorConfig.hprot   = 0;
-	DMA_CfgDescr(DMA_CHANNEL_I2C_RX, true, &rxDescriptorConfig);
-
-	/*
-	* Changing the priority of DMA IRQ to use FreeRTOS functions.
-	* It must be numerically equal to or greater than configMAX_SYSCALL_INTERRUPT_PRIORITY
-	* defined in FreeRTOSConfig.h
-	* Currently, that is set to 5.
-	* I make the DMA have a higher priority than the I2C interrupt.
-	* That, originally, is how it worked.
-	*/
-	NVIC_SetPriority(DMA_IRQn, I2C_INT_PRIO_LEVEL - 1);
-}
-
 /**************************************************************************//**
  * @brief  Setup I2C
  *****************************************************************************/
@@ -255,6 +196,49 @@ void setupI2C() {
 	I2C_IntClear(I2C1, i2c_IFC_flags);
 	I2C_IntEnable(I2C1, i2c_IEN_flags);
 	NVIC_EnableIRQ(I2C1_IRQn);
+
+	/* We now setup the DMA components for I2C */
+
+	/* Initialization Struct, and the Tx Structs */
+	DMA_CfgChannel_TypeDef  txChannelConfig;
+	DMA_CfgDescr_TypeDef	txDescriptorConfig;
+
+	DMA_CfgChannel_TypeDef  rxChannelConfig;
+	DMA_CfgDescr_TypeDef	rxDescriptorConfig;
+
+	/* Setup call-back function */
+	dmaCB.cbFunc  = i2cTransferComplete;
+	dmaCB.userPtr = NULL;
+
+	/* Setting up TX channel */
+	txChannelConfig.highPri   = true;
+	txChannelConfig.enableInt = true;
+	txChannelConfig.select    = DMAREQ_I2C1_TXBL;
+	txChannelConfig.cb        = &dmaCB;
+	DMA_CfgChannel(DMA_CHANNEL_I2C_TX, &txChannelConfig);
+
+	/* Setting up TX channel descriptor */
+	txDescriptorConfig.dstInc  = dmaDataIncNone;
+	txDescriptorConfig.srcInc  = dmaDataInc1;
+	txDescriptorConfig.size    = dmaDataSize1;
+	txDescriptorConfig.arbRate = dmaArbitrate1;
+	txDescriptorConfig.hprot   = 0;
+	DMA_CfgDescr(DMA_CHANNEL_I2C_TX, true, &txDescriptorConfig);
+
+	/* Setting up RX channel */
+	rxChannelConfig.highPri    = true;
+	rxChannelConfig.enableInt  = true;
+	rxChannelConfig.select     = DMAREQ_I2C1_RXDATAV;
+	rxChannelConfig.cb 		   = &dmaCB;
+	DMA_CfgChannel(DMA_CHANNEL_I2C_RX, &rxChannelConfig);
+
+	/* Setting up RX channel descriptor */
+	rxDescriptorConfig.dstInc  = dmaDataInc1;
+	rxDescriptorConfig.srcInc  = dmaDataIncNone;
+	rxDescriptorConfig.size    = dmaDataSize1;
+	rxDescriptorConfig.arbRate = dmaArbitrate1;
+	rxDescriptorConfig.hprot   = 0;
+	DMA_CfgDescr(DMA_CHANNEL_I2C_RX, true, &rxDescriptorConfig);
 
 	// We're starting/restarting the board, so it assume the bus is busy
 	// We need to either have a clock-high (BITO) timeout, or issue an abort
@@ -359,7 +343,7 @@ int main(void) {
 	else {puts("Creation of Shared Memory Successful");}
 
 	/* Setting up DMA Controller */
-	setupDMA();
+	cspDMA_Init(CSP_HPROT);
 
 	/* Setting up i2c */
 	setupI2C();
