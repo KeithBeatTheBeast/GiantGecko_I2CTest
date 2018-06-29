@@ -26,6 +26,9 @@
  *	cspDMA_EFM32_M3.c/h
  *	SharedMemory.c/h
  *
+ *	Pull-up Resistors used:
+ *	330 Ohms and 2.7 kOhms
+ *
  *	MTU Constraints:
  *	Due to the nature of the DMA controller on the EFM32 with the Cortex-M3, the maximum transmission
  *	length for a frame being sent by this driver is 1024 bytes.
@@ -150,5 +153,43 @@ static SharedMem_t		 i2cSharedMem;
 
 // The statically allocated shared memory
 //uint8_t staticSharedMemBufs[NUM_SH_MEM_BUFS][MAX_FRAME_SIZE];
+
+/********************************************************************
+ * @brief Inline function for calculating the address of the
+ * CTRL register of the RX Channel's Descriptor
+ */
+static inline int16_t *getRxDMACtrlAddr();
+
+/********************************************************************
+ * @brief Function called when DMA transfer is complete.
+ *
+ * THIS FUNCTION IS CALLED IN AN ISR CONTEXT BY THE DMA'S IRQ
+ *
+ * For details on how to recover the number of bytes that has been received,
+ * please visit the Silicon Labs Reference Manual for the
+ * EFM32 Giant Gecko with the ARM Cortex-M3 processor.
+ * https://www.silabs.com/documents/public/reference-manuals/EFM32GG-RM.pdf
+ *
+ * Chapter 8 - DMA; Pages 64-66 on the n_minus_1 data field
+ *******************************************************************/
+void i2cTransferComplete(unsigned int channel, bool primary, void *user);
+
+/**************************************************************************//**
+ * @brief  Setup I2C
+ *****************************************************************************/
+void cspI2C_Init();
+
+/**************************************************************************//**
+ * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
+ *****************************************************************************/
+static void vI2CTransferTask(void *txQueueHandle);
+
+static void vI2CReceiveTask(void *handle);
+
+void i2cTempmain(void);
+
+static inline bool checkFlags(int flag);
+
+void I2C1_IRQHandler(void);
 
 #endif /* CSPI2C_EFM32_M3_H_ */
