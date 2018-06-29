@@ -286,17 +286,11 @@ void i2cTempmain(void) {
 	vTaskStartScheduler();
 }
 
-static inline bool checkFlags(int flag) {
-	return (flag & (I2C_IF_BUSHOLD | \
-			I2C_IF_NACK | \
-			I2C_IF_ADDR));
-}
-
-/**************************************************************************//**
+/*****************************************************************************
  * @brief I2C Interrupt Handler.
  *        The interrupt table is in assembly startup file startup_efm32.s
  *****************************************************************************/
-void I2C1_IRQHandler(void) {
+void I2C1_IRQHandler() {
    
   int flags = I2C1->IF;
 
@@ -305,7 +299,7 @@ void I2C1_IRQHandler(void) {
    * Usually normal operating conditions but take too long
    * Tx/Rx transfer stuff
    */
-  if (checkFlags(flags)) {
+  if (flags & (I2C_IF_BUSHOLD | I2C_IF_NACK | I2C_IF_ADDR)) {
 
 	  /*
 	   * Slave Receiver:
@@ -419,9 +413,12 @@ void I2C1_IRQHandler(void) {
       I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
-  // Put ARBLOST, BITO, BUSERR, CLTO, here.
-  // It worked without the DMA but now it causes both devices to simply spam start conditions
-  // And never latch onto each other.
+  /*
+   * All Potential Error Codes/Timeouts
+   * Put ARBLOST, BITO, BUSERR, CLTO, here.
+   * Raise error flag for Tx task.
+   * Cancel Auto-acks, abort transmission, return from ISR.
+   * */
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
 	  if (flags & I2C_IF_BITO) {
 		  transmissionError |= BITO_ERR;

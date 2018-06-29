@@ -188,8 +188,10 @@ static void vI2CReceiveTask(void *handle);
 
 void i2cTempmain(void);
 
-static inline bool checkFlags(int flag);
-
+/*****************************************************************************
+ * @brief I2C Interrupt Handler.
+ *        The interrupt table is in assembly startup file startup_efm32.s
+ *****************************************************************************/
 void I2C1_IRQHandler(void);
 
 #endif /* CSPI2C_EFM32_M3_H_ */
