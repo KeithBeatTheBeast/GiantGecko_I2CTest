@@ -345,11 +345,11 @@ int main(void) {
 	else { puts("Creation of Busy Semaphore Successful!");}
 
 	// Create the rx queue and report on it
-	rxDataQueue = xQueueCreate(20, sizeof(uint8_t *));
+	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
 	if (rxDataQueue == NULL) { puts("Creation of Rx Data Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Data Queue Successful");}
 
-	rxIndexQueue = xQueueCreate(20, sizeof(int16_t));
+	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
 	if (rxIndexQueue == NULL) { puts("Creation of Rx Index Queue Failed!"); } // TODO replace with error statements to init
 	else { puts("Creation of Rx Index Queue Successful");}
 
