@@ -54,7 +54,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
 		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
-		uint16_t count = MAX_FRAME_SIZE - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) -1 ;
+		uint16_t count = I2C_MTU - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) -1 ;
 
 		// I literally put this here to prevent a size misalignment on the first transfer.
 		if (firstRx) {
@@ -72,7 +72,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 /**************************************************************************//**
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
-static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle and semaphore handle
+static void vI2CTransferTask(void *nothing) {
 
 	uint32_t c = 0;
 	while (1) {
@@ -115,7 +115,57 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 	}
 }
 
-static void vI2CReceiveTask(void *handle) {
+/************************************************************
+ * @brief Function CSP calls to send.
+ ***********************************************************/
+int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
+
+	if (xSemaphoreTake(waitSem, timeout) != pdTRUE) {
+		return WAIT_TO_ERR;
+	}
+
+	for (uint8_t i = 0; i < frame->retries; i++) {
+
+		transmissionError = NO_TRANS_ERR; // Set error flag to zero. This can be modified by the ISR
+		I2CRegs->CMD |= I2C_CMD_CLEARTX;
+
+		// Load address.
+		I2CRegs->TXDATA = frame->dest & I2C_WRITE;
+
+		// Active DMA for Tx
+		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
+				true,
+				false,
+				(void*)&(I2CRegs->TXDATA),
+				(void*)frame->data,
+				frame->len - 1);
+
+		// Issue start condition
+		I2CRegs->CMD |= I2C_CMD_START;
+
+		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
+		// The reason why the semaphore is here is because the function
+		// will eventually become a task where at the top, we pend a queue.
+		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
+			I2CRegs->CMD = I2C_CMD_ABORT;
+			transmissionError |= TIMEOUT_ERR;
+		}
+
+		if (transmissionError > 0) {
+			//if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2CRegs->IF);}
+			I2CRegs->CMD |= I2C_CMD_ABORT;
+			vTaskDelay(portTICK_PERIOD_MS * 0.5);
+		}
+		else {
+			xSemaphoreGive(waitSem);
+			return 0;
+		}
+	}
+	xSemaphoreGive(waitSem);
+	return transmissionError;
+}
+
+static void vI2CReceiveTask(void *nothing) {
 
 	uint8_t *newRxBuf, *cspBuf;
 	int16_t index;
@@ -190,7 +240,10 @@ uint8_t i2c_FreeRTOS_Structs_Init() {
 
 	// Create the Tx timeout semaphore.
 	busySem = xSemaphoreCreateBinary();
-	if (busySem == NULL) {err |= TX_SEM_INIT_ERR;}
+	if (busySem == NULL) {err |= TX_SEM1_INIT_ERR;}
+
+	waitSem = xSemaphoreCreateBinary();
+	if (waitSem == NULL) {err |= TX_SEM2_INIT_ERR;}
 
 	// Create the rx queue and report on it
 	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
@@ -199,7 +252,7 @@ uint8_t i2c_FreeRTOS_Structs_Init() {
 	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
 	if (rxIndexQueue == NULL) {err |= RX_INDEX_INIT_ERR;}
 
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * MAX_FRAME_SIZE, NUM_SH_MEM_BUFS);
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS);
 	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
 	if (i2cSharedMem == NULL) {err |= SH_MEM_INIT_ERR;}
 
@@ -283,8 +336,6 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 			I2C_ROUTE_SCLPEN |
 			(I2C_ROUTE_LOC << _I2C_ROUTE_LOCATION_SHIFT);
 
-	/* Initializing the I2C */
-
 	/* Setting up to enable slave mode */
 	I2CRegs->SADDR = opt_addr;
 	I2CRegs->CTRL |= csp_I2C_ctrl;
@@ -307,9 +358,10 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		I2CRegs->CMD = I2C_CMD_ABORT;
 	}
 
-	// Create I2C Tasks
+	// Create I2C Tasks TODO get rid of TX task
 	xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vI2CReceiveTask, (const char *) "I2CRegs_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	if (xTaskCreate(vI2CReceiveTask, (const char *) "I2CRegs_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL) \
+			!= pdPASS) { err |= RX_TASK_CREATE_FAIL;}
 
 	return err;
 }
@@ -355,7 +407,7 @@ void I2C1_IRQHandler() {
 					  false,
 					  (void*)i2c_Rx + 1,
 					  (void*)&(I2CRegs->RXDATA),
-					  MAX_FRAME_SIZE - 1);
+					  I2C_MTU - 1);
 		  }
 
 		  // No pointers are availible so we cannot accept the data.

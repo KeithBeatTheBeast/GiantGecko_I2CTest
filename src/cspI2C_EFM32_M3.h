@@ -84,7 +84,7 @@
 #define I2C_INT_PRIO_LEVEL				6    // Interrupt priority level
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
-#define MAX_FRAME_SIZE					1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
+#define I2C_MTU							1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
 #define NUM_SH_MEM_BUFS					3    // Number of shared memory buffers
 #define I2C0_Ports						gpioPortC
 #define I2C0_SDA						5 // I2C0 ports are a placeholder since the EFM32 has nothing for it
@@ -108,15 +108,18 @@ static volatile uint16_t transmissionError;
 #define E_QUEUE_ERR						0x40
 #define F_QUEUE_ERR						0x80
 #define ABORT_BUSHOLD					0x100
+#define WAIT_TO_ERR						0x200
 
 /* Error Codes for the initialization functions. */
 #define NO_INIT_ERR						0x00
-#define TX_SEM_INIT_ERR					0x01
-#define RX_DATA_INIT_ERR				0x02
-#define RX_INDEX_INIT_ERR				0x04
-#define SH_MEM_INIT_ERR					0x08
-#define UNDEF_HANDLE					0x10
-#define UNSUPPORTED_SPEED				0x20
+#define TX_SEM1_INIT_ERR				0x01
+#define TX_SEM2_INIT_ERR				0x02
+#define RX_DATA_INIT_ERR				0x04
+#define RX_INDEX_INIT_ERR				0x08
+#define SH_MEM_INIT_ERR					0x10
+#define UNDEF_HANDLE					0x20
+#define UNSUPPORTED_SPEED				0x40
+#define RX_TASK_CREATE_FAIL				0x80
 
 /*
  * ISR Interrupt Enable Lines
@@ -162,6 +165,16 @@ static volatile uint16_t transmissionError;
 					  I2C_CTRL_GIBITO | \
 					  I2C_CTRL_CLTO_1024PPC)
 
+typedef struct __attribute__((packed)) i2c_frame_s {
+    uint8_t padding;
+    uint8_t retries;
+    uint32_t reserved;
+    uint8_t dest;
+    uint8_t len_rx;
+    uint16_t len;
+    uint8_t data[I2C_MTU];
+} i2c_frame_t;
+
 // Pointer to structure where the I2C Registers are found. Assigned at runtime depending on module
 I2C_TypeDef *I2CRegs;
 
@@ -172,8 +185,8 @@ uint8_t *i2c_Rx;
 static volatile bool i2c_RxInProgress, firstRx;
 
 // FreeRTOS handles
-static SemaphoreHandle_t busySem; // Tx semaphore
-static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queue for data and index
+static SemaphoreHandle_t busySem, waitSem; // Tx semaphores
+static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queues
 
 // Shared memory handle
 static SharedMem_t		 i2cSharedMem;
@@ -205,6 +218,8 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user);
  * @brief  Transmitting I2C data. Will busy-wait until the transfer is complete.
  *****************************************************************************/
 static void vI2CTransferTask(void *txQueueHandle);
+
+int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout);
 
 static void vI2CReceiveTask(void *handle);
 
