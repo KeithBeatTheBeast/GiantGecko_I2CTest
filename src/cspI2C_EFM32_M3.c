@@ -181,9 +181,8 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		CMU_ClockEnable(cmuClock_I2C0, true);
 		I2C_IRQ = I2C0_IRQn;
 
-		I2C_Port = I2C0_Ports;
-		I2C_SDA = I2C0_SDA;
-		I2C_SCL = I2C0_SCL;
+		GPIO_PinModeSet(I2C0_Ports, I2C0_SDA, gpioModeWiredAndPullUpFilter, 1);
+		GPIO_PinModeSet(I2C0_Ports, I2C0_SCL, gpioModeWiredAndPullUpFilter, 1);
 	}
 
 	else if (handle == 1) {
@@ -191,9 +190,8 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		CMU_ClockEnable(cmuClock_I2C1, true);
 		I2C_IRQ = I2C1_IRQn;
 
-		I2C_Port = I2C1_Ports;
-		I2C_SDA = I2C1_SDA;
-		I2C_SCL = I2C1_SCL;
+		GPIO_PinModeSet(I2C1_Ports, I2C1_SDA, gpioModeWiredAndPullUpFilter, 1);
+		GPIO_PinModeSet(I2C1_Ports, I2C1_SCL, gpioModeWiredAndPullUpFilter, 1);
 	}
 
 	else { return err |= UNDEF_HANDLE;}
@@ -239,10 +237,6 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		return err |= UNSUPPORTED_SPEED;
 	}
 
-	/* Using PC4 (SDA) and PC5 (SCL) */
-	GPIO_PinModeSet(I2C_Port, I2C_SDA, gpioModeWiredAndPullUpFilter, 1);
-	GPIO_PinModeSet(I2C_Port, I2C_SCL, gpioModeWiredAndPullUpFilter, 1);
-
 	/* Enable pins at location 1 */
 	I2CRegs->ROUTE = I2C_ROUTE_SDAPEN |
 			I2C_ROUTE_SCLPEN |
@@ -252,14 +246,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
 	/* Setting up to enable slave mode */
 	I2CRegs->SADDR = opt_addr;
-	I2CRegs->CTRL |= I2C_CTRL_SLAVE | \
-			I2C_CTRL_AUTOSN | \
-			I2C_CTRL_BITO_160PCC | \
-			I2C_CTRL_GIBITO | \
-			I2C_CTRL_CLTO_1024PPC;
-
-
-	// Only accept transmissions if it is directly talking to me.
+	I2CRegs->CTRL |= csp_I2C_ctrl;
 	I2CRegs->SADDRMASK |= CSP_SADDR_MASK;
 
 	// Set Rx index to zero.

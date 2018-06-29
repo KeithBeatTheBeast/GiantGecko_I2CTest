@@ -153,6 +153,15 @@ static volatile uint16_t transmissionError;
 					  I2C_IFC_START | \
 					  I2C_IFC_BUSERR)
 
+/*
+ * Initial values for the CTRL register of the I2C Module
+ */
+#define csp_I2C_ctrl (I2C_CTRL_SLAVE | \
+					  I2C_CTRL_AUTOSN | \
+					  I2C_CTRL_BITO_160PCC | \
+					  I2C_CTRL_GIBITO | \
+					  I2C_CTRL_CLTO_1024PPC)
+
 // Pointer to structure where the I2C Registers are found. Assigned at runtime depending on module
 I2C_TypeDef *I2CRegs;
 
