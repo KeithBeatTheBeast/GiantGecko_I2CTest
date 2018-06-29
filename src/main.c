@@ -74,8 +74,7 @@
  ******************************************************************************/
 
 // Main Header file - This file will eventually be renamed cspI2C.c
-#include "cspI2C_EFM32.h"
-
+#include "cspI2C_EFM32_M3.h"
 #include "testSharedMem.h"
 #include "EFM32_throwI2CErrors.h"
 

@@ -1,5 +1,5 @@
 /*
- * cspDMA_EFM32.c
+ * cspDMA_EFM32_M3.c
  *
  *  Created on: Jun 20, 2018
  *      Author: kgmills
@@ -14,7 +14,7 @@
  *
  */
 
-#include "cspDMA_EFM32.h"
+#include "cspDMA_EFM32_M3.h"
 
 // Descriptor memory space do not do anything
 uint8_t cbrAddr[(NUM_DMA_CHANNELS * DESCRIPTOR_SIZE) + BASE_RAW_SIZE];

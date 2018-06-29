@@ -11,7 +11,7 @@
 #ifndef EFM32_THROWI2CERRORS_H_
 #define EFM32_THROWI2CERRORS_H_
 
-#include "cspI2C_EFM32.h"
+#include "cspI2C_EFM32_M3.h"
 
 void vThrowI2CErrors(void *iDontCare) {
 
