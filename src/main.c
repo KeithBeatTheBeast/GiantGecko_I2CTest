@@ -6,6 +6,9 @@
  */
 
 #include "cspI2C_EFM32_M3.h"
+#include "makePrintfWork.h"
 int main(void) {
+	// Use this to enable printfs.
+	SWO_SetupForPrint();
 	i2cTempmain();
 }

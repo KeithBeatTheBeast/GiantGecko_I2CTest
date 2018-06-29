@@ -75,7 +75,6 @@
  */
 #include "cspDMA_EFM32_M3.h"
 #include "SharedMemory.h"
-#include "makePrintfWork.h" // TODO remove from release version
 
 /* Defines*/
 #define I2C_ADDRESS                     0xE2 // Slave Address of Device
@@ -137,6 +136,8 @@ static volatile uint16_t transmissionError;
 					  I2C_IFC_CLTO | \
 					  I2C_IFC_START | \
 					  I2C_IFC_BUSERR)
+
+I2C_TypeDef *I2CRegs;
 
 // Rx Buffer - Constantly changes but needed for ISR.
 uint8_t *i2c_Rx;

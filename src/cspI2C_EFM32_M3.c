@@ -44,7 +44,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	// buffer, then allow the I2C module to send a STOP once it is out of data.
 	// This setting is cleared in the MSTOP condition of the I2C IRQ.
 	if (channel == DMA_CHANNEL_I2C_TX) {
-		I2C1->CTRL |= I2C_CTRL_AUTOSE;
+		I2CRegs->CTRL |= I2C_CTRL_AUTOSE;
 	}
 
 	// RX has completed
@@ -74,6 +74,9 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
  *****************************************************************************/
 void cspI2C_Init() {
 
+	printf("%x\n", I2C1);
+	I2CRegs = I2C1;
+	printf("%x\n", I2CRegs);
 	/* Enabling clock to the I2C*/
 	CMU_ClockEnable(cmuClock_I2C1, true);
 
@@ -99,16 +102,16 @@ void cspI2C_Init() {
 	GPIO_PinModeSet(gpioPortC, 5, gpioModeWiredAndPullUpFilter, 1);
 
 	/* Enable pins at location 1 */
-	I2C1->ROUTE = I2C_ROUTE_SDAPEN |
+	I2CRegs->ROUTE = I2C_ROUTE_SDAPEN |
 			I2C_ROUTE_SCLPEN |
 			(0 << _I2C_ROUTE_LOCATION_SHIFT);
 
 	/* Initializing the I2C */
-	I2C_Init(I2C1, &i2cInit);
+	I2C_Init(I2CRegs, &i2cInit);
 
 	/* Setting up to enable slave mode */
-	I2C1->SADDR = I2C_ADDRESS;
-	I2C1->CTRL |= I2C_CTRL_SLAVE | \
+	I2CRegs->SADDR = I2C_ADDRESS;
+	I2CRegs->CTRL |= I2C_CTRL_SLAVE | \
 			I2C_CTRL_AUTOSN | \
 		  	I2C_CTRL_BITO_160PCC | \
 			I2C_CTRL_GIBITO | \
@@ -116,7 +119,7 @@ void cspI2C_Init() {
 
 
 	// Only accept transmissions if it is directly talking to me.
-	I2C1->SADDRMASK |= 0x7F;
+	I2CRegs->SADDRMASK |= 0x7F;
 
 	// Set Rx index to zero.
 	i2c_RxInProgress = false;
@@ -125,8 +128,8 @@ void cspI2C_Init() {
 	firstRx = true;
 
 	// Enable interrupts
-	I2C_IntClear(I2C1, i2c_IFC_flags);
-	I2C_IntEnable(I2C1, i2c_IEN_flags);
+	I2C_IntClear(I2CRegs, i2c_IFC_flags);
+	I2C_IntEnable(I2CRegs, i2c_IEN_flags);
 	NVIC_EnableIRQ(I2C1_IRQn);
 
 	/* We now setup the DMA components for I2C */
@@ -174,8 +177,8 @@ void cspI2C_Init() {
 
 	// We're starting/restarting the board, so it assume the bus is busy
 	// We need to either have a clock-high (BITO) timeout, or issue an abort
-	if (I2C1->STATE & I2C_STATE_BUSY) {
-		I2C1->CMD = I2C_CMD_ABORT;
+	if (I2CRegs->STATE & I2C_STATE_BUSY) {
+		I2CRegs->CMD = I2C_CMD_ABORT;
 	}
 }
 
@@ -193,33 +196,33 @@ static void vI2CTransferTask(void *txQueueHandle) { // TODO pass in queue handle
 		else {txData  = tempTxBuf1;}
 		transmissionError = NO_TRANS_ERR; // Set error flag to zero.
 
-		I2C1->CMD |= I2C_CMD_CLEARTX;
+		I2CRegs->CMD |= I2C_CMD_CLEARTX;
 
 		// Load address. TODO format data from queue
-		I2C1->TXDATA = I2C_ADDRESS & I2C_WRITE;
+		I2CRegs->TXDATA = I2C_ADDRESS & I2C_WRITE;
 
 		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
 				true,
 				false,
-				(void*)&(I2C1->TXDATA),
+				(void*)&(I2CRegs->TXDATA),
 				(void*)txData,
 				20 - 1); // TODO get from upper layer.
 
 		// Issue start condition
-		I2C1->CMD |= I2C_CMD_START;
+		I2CRegs->CMD |= I2C_CMD_START;
 
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
 		// will eventually become a task where at the top, we pend a queue.
 		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
-			I2C1->CMD = I2C_CMD_ABORT;
+			I2CRegs->CMD = I2C_CMD_ABORT;
 			transmissionError |= TIMEOUT_ERR;
 		}
 
 		// Error happened. TODO send to upper layer
 		if (transmissionError > 0) {
-			if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2C1->IF);}
-			I2C1->CMD |= I2C_CMD_ABORT;
+			if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2CRegs->IF);}
+			I2CRegs->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
 	}
@@ -249,9 +252,6 @@ static void vI2CReceiveTask(void *handle) {
  * Main is called from __iar_program_start, see assembly startup file
  *****************************************************************************/
 void i2cTempmain(void) {
-  
-	// Use this to enable printfs.
-	SWO_SetupForPrint();
 
 	// Create the semaphore and report on it.
 	busySem = xSemaphoreCreateBinary(); // TODO replace puts with error statements to initializer
@@ -279,8 +279,8 @@ void i2cTempmain(void) {
 	cspI2C_Init();
 
 	// Create I2C Tasks
-	xTaskCreate(vI2CTransferTask, (const char *) "I2C1_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
-	xTaskCreate(vI2CReceiveTask, (const char *) "I2C1_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
+	xTaskCreate(vI2CReceiveTask, (const char *) "I2CRegs_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL);
 
 	// Start Scheduler TODO externalize to another API
 	vTaskStartScheduler();
@@ -292,7 +292,7 @@ void i2cTempmain(void) {
  *****************************************************************************/
 void I2C1_IRQHandler() {
    
-  int flags = I2C1->IF;
+  int flags = I2CRegs->IF;
 
   /*
    * Conditions that may, but are not guaranteed to, cause a BUSHOLD condition
@@ -309,7 +309,7 @@ void I2C1_IRQHandler() {
 	  if (flags & I2C_IF_ADDR ) {
 
 		  // Ack the address or else it will be interpreted as a NACK.
-		  I2C1->CMD = I2C_CMD_ACK;
+		  I2CRegs->CMD = I2C_CMD_ACK;
 
 		  // Pend the shared memory for a buffer pointer.
 		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
@@ -319,26 +319,26 @@ void I2C1_IRQHandler() {
 		  // And activate the DMA. Done.
 		  if (i2c_Rx != pdFALSE) {
 			  // Setup DMA Transfer
-			  i2c_Rx[0] = I2C1->RXDATA;
-			  I2C1->CTRL |= I2C_CTRL_AUTOACK;
+			  i2c_Rx[0] = I2CRegs->RXDATA;
+			  I2CRegs->CTRL |= I2C_CTRL_AUTOACK;
 			  i2c_RxInProgress = true;
 			  DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
 					  true,
 					  false,
 					  (void*)i2c_Rx + 1,
-					  (void*)&(I2C1->RXDATA),
+					  (void*)&(I2CRegs->RXDATA),
 					  MAX_FRAME_SIZE - 1);
 		  }
 
 		  // No pointers are availible so we cannot accept the data.
 		  // Send a NACK and abort the transmission.
 		  else {
-			  I2C1->CMD = I2C_CMD_NACK | I2C_CMD_ABORT;
+			  I2CRegs->CMD = I2C_CMD_NACK | I2C_CMD_ABORT;
 			  transmissionError |= E_QUEUE_ERR;
 		  }
 
 		  // In all cases the Interrupt flag must be cleared.
-		  I2C_IntClear(I2C1, I2C_IFC_ADDR | I2C_IFC_BUSHOLD);
+		  I2C_IntClear(I2CRegs, I2C_IFC_ADDR | I2C_IFC_BUSHOLD);
 	  }
 
 	  /*
@@ -348,8 +348,8 @@ void I2C1_IRQHandler() {
 	   */
 	  if (flags & I2C_IF_NACK) {
 		  transmissionError |= NACK_ERR;
-		  I2C_IntClear(I2C1, I2C_IFC_NACK);
-		  I2C1->CMD |= I2C_CMD_ABORT;
+		  I2C_IntClear(I2CRegs, I2C_IFC_NACK);
+		  I2CRegs->CMD |= I2C_CMD_ABORT;
 		  xSemaphoreGiveFromISR(busySem, NULL);
 	  }
 
@@ -359,15 +359,15 @@ void I2C1_IRQHandler() {
 	   * to tell the I2C module to sent it's stop condition when TXBL and TXC are fully
 	   * emptied so the bus locks up.
 	   */
-	  if (I2C1->IF & I2C_IF_BUSHOLD) {
+	  if (I2CRegs->IF & I2C_IF_BUSHOLD) {
 
 		  // Data Transmitted and ACK received. DMA was not fast enough to trigger stop.
-		  if (I2C1->STATE & I2C_STATE_MASTER) {
-			  I2C1->CMD |= I2C_CMD_STOP;
+		  if (I2CRegs->STATE & I2C_STATE_MASTER) {
+			  I2CRegs->CMD |= I2C_CMD_STOP;
 		  }
 
 		  else {
-			  I2C1->CMD |= I2C_CMD_ABORT;
+			  I2CRegs->CMD |= I2C_CMD_ABORT;
 			  DMA->CHENS &= ~DMA_ENABLE_I2C_TX;
 			  transmissionError |= ABORT_BUSHOLD;
 			  xSemaphoreGiveFromISR(busySem, NULL);
@@ -382,9 +382,9 @@ void I2C1_IRQHandler() {
    * Release semaphore
    */
   if (flags & I2C_IF_MSTOP) {
-	  I2C_IntClear(I2C1, i2c_IFC_flags);
+	  I2C_IntClear(I2CRegs, i2c_IFC_flags);
 	  flags &= ~I2C_IF_SSTOP;
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOSE;
+	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOSE;
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 
@@ -409,8 +409,8 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  i2c_RxInProgress = false;
 	  }
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-      I2C_IntClear(I2C1, I2C_IFC_SSTOP | I2C_IFC_RSTART);
+	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK;
+      I2C_IntClear(I2CRegs, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
   /*
@@ -442,9 +442,9 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_TX;
 	  }
 
-	  I2C1->CTRL &= ~I2C_CTRL_AUTOACK;
-	  I2C_IntClear(I2C1, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
-	  I2C1->CMD = I2C_CMD_ABORT;
+	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK;
+	  I2C_IntClear(I2CRegs, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
+	  I2CRegs->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
 	  xSemaphoreGiveFromISR(busySem, NULL);
