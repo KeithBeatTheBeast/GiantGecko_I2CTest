@@ -84,7 +84,8 @@
 #define I2C_INT_PRIO_LEVEL				6    // Interrupt priority level
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
-#define I2C_MTU							1024 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
+#define CSP_I2C_HEADER_LEN				10   // The size of the CSP I2C Frame Header in bytes.
+#define I2C_MTU							1014 // Hardcoded for the EFM32 with the M3 as the DMA can only do 1024 transfers per invocation.
 #define NUM_SH_MEM_BUFS					3    // Number of shared memory buffers
 #define I2C0_Ports						gpioPortC
 #define I2C0_SDA						5 // I2C0 ports are a placeholder since the EFM32 has nothing for it

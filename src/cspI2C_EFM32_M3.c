@@ -36,7 +36,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	(void) primary;
 	(void) user;
 
-	// If we're on the right channel, and the DMA has dumped all data to the TXDATA
+	// I2C Transmission Channel, and the DMA has dumped all data to the TXDATA
 	// buffer, then allow the I2C module to send a STOP once it is out of data.
 	// This setting is cleared in the MSTOP condition of the I2C IRQ.
 	if (channel == DMA_CHANNEL_I2C_TX) {
@@ -86,9 +86,9 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
 				true,
 				false,
-				(void*)&(I2CRegs->TXDATA),
-				(void*)&(frame->data),
-				frame->len - 1);
+				&(I2CRegs->TXDATA),
+				frame,
+				CSP_I2C_HEADER_LEN + frame->len - 1);
 
 		// Issue start condition
 		I2CRegs->CMD |= I2C_CMD_START;
@@ -117,19 +117,21 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 
 static void vI2CReceiveTask(void *nothing) {
 
-	uint8_t *newRxBuf, *cspBuf;
+	uint8_t *newRxBuf;
+	i2c_frame_t *cspBuf;
 	int16_t index;
 
 	while(1) {
 		xQueueReceive(rxDataQueue, &newRxBuf, portMAX_DELAY);
 		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
 
-		cspBuf = pvPortMalloc(sizeof(uint8_t) * index);
-		memcpy(cspBuf, newRxBuf, index);
+		cspBuf = pvPortMalloc(sizeof(i2c_frame_t));
+		memcpy(cspBuf, newRxBuf, I2C_MTU + NUM_SH_MEM_BUFS);
 
 		xSharedMemPut(i2cSharedMem, newRxBuf);
 
-		printf("DATA SIZE: %d; DATA: %s\n", index, cspBuf); // TODO send to upper layer
+		printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %d, Len_rx: %d, Len: %d, \n Data: %d\n", \
+				cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 		vPortFree(cspBuf); // TODO this will be the responsibility of the upper layer to get rid of.
 	}
 }
