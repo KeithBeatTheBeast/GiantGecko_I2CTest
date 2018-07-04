@@ -130,6 +130,8 @@ static void vI2CReceiveTask(void *nothing) {
 
 		xSharedMemPut(i2cSharedMem, newRxBuf);
 
+		cspBuf->len = index - CSP_I2C_HEADER_LEN;
+
 		printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %d, Len_rx: %d, Len: %d, \n Data: %d\n", \
 				cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 		vPortFree(cspBuf); // TODO this will be the responsibility of the upper layer to get rid of.
