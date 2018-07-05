@@ -58,6 +58,7 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 			count--;
 		}
 
+		printf("DMA: %d\n", count);
 		if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
 			transmissionError |= F_QUEUE_ERR;
 			puts("Index Queue Send Error");
@@ -116,30 +117,6 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 	}
 	xSemaphoreGive(waitSem);
 	return transmissionError;
-}
-
-static void vI2CReceiveTask(void *nothing) {
-
-	uint8_t *newRxBuf;
-	i2c_frame_t *cspBuf;
-	int16_t index;
-
-	while(1) {
-		xQueueReceive(rxDataQueue, &newRxBuf, portMAX_DELAY);
-		xQueueReceive(rxIndexQueue, &index, portMAX_DELAY);
-
-		cspBuf = pvPortMalloc(sizeof(i2c_frame_t));
-		memcpy(cspBuf, newRxBuf, I2C_MTU + NUM_SH_MEM_BUFS);
-
-		xSharedMemPut(i2cSharedMem, newRxBuf);
-
-		cspBuf->len = index - CSP_I2C_HEADER_LEN;
-
-		printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %x, Len_rx: %d, Len: %d, \n Data: %s\n", \
-				cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
-		//csp_i2c_rx(cspBuf, void * pxTaskWoken) TODO uncomment.
-		vPortFree(cspBuf);
-	}
 }
 
 /******************************************************************************
@@ -202,10 +179,6 @@ uint8_t i2c_FreeRTOS_Structs_Init() {
 
 	waitSem = xSemaphoreCreateBinary();
 	if (waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE) {err |= TX_SEM2_INIT_ERR;}
-
-	// Create the rx queue and report on it
-	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
-	if (rxDataQueue == NULL) {err  |= RX_DATA_INIT_ERR; }
 
 	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
 	if (rxIndexQueue == NULL) {err |= RX_INDEX_INIT_ERR;}
@@ -315,10 +288,6 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	if (I2CRegs->STATE & I2C_STATE_BUSY) {
 		I2CRegs->CMD = I2C_CMD_ABORT;
 	}
-
-	// Create I2C Rx Task
-	if (xTaskCreate(vI2CReceiveTask, (const char *) "I2CRegs_Rx", configMINIMAL_STACK_SIZE, NULL, I2C_TASKPRIORITY, NULL) \
-			!= pdPASS) { err |= RX_TASK_CREATE_FAIL;}
 
 	return err;
 }
@@ -435,16 +404,21 @@ void I2C1_IRQHandler() {
   if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
 	  if (i2c_RxInProgress) {
 
-		  // Send Data to Rx task for processing. DMA IRQ handles calculating and
-		  // posting the actual size of bytes RX'd to a separate queue.
-		  if (xQueueSendFromISR(rxDataQueue, &i2c_Rx, NULL) != pdTRUE) {
-			 transmissionError |= F_QUEUE_ERR;
-			 xSharedMemPut(i2cSharedMem, i2c_Rx);
+		  //Cast the Rx buffer as a CSP I2C Frame.
+		  i2c_frame_t *cspBuf = (i2c_frame_t*)i2c_Rx;
+
+		  // Tell the DMA to stop receiving bytes and report how many bytes were RX'd
+		  // NOTE: YOU ARE DEPENDANT ON THE DMA IRQ BEING OF HIGHER PRIORITY THAN THE I2C IRQ
+		  // THUS FORCING A CONTEXT SWITCH TO THE DMA IRQ THE MOMENT THIS FLAG IS RAISED!
+		  DMA->IFS = DMA_COMPLETE_I2C_RX;
+		  if (xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL) != pdTRUE) {
 		  }
 
-		  // Tell the DMA to stop receiving bytes.
-		  DMA->IFS = DMA_COMPLETE_I2C_RX;
+		  printf("Len: %d\n", cspBuf->len);
 		  i2c_RxInProgress = false;
+
+		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // TODO comment out this/remove, use CSP buffers.
+		  //csp_i2c_rx(cspBuf, void * pxTaskWoken) TODO uncomment.
 	  }
 	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK;
       I2C_IntClear(I2CRegs, I2C_IFC_SSTOP | I2C_IFC_RSTART);
@@ -471,8 +445,12 @@ void I2C1_IRQHandler() {
 	  }
 
 	  // Tell the DMA to stop.
+	  // Receive it's item but do nothing with it.
 	  if (i2c_RxInProgress) {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
+		  uint16_t index;
+		  if (xQueueReceiveFromISR(rxIndexQueue, &index, NULL) != pdTRUE) {
+		  }
 	  }
 
 	  else {

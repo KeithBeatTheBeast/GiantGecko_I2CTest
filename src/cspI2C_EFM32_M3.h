@@ -78,7 +78,6 @@
 
 /* Defines*/
 #define CSP_SADDR_MASK					0x7F // Slave Address Mask
-#define I2C_TASKPRIORITY				2    // Task priority
 #define I2C_WRITE					    0xFE // Should always be Master Trans/Slave Rec
 #define I2C_READ					    0xFF // Future Potential Functionality
 #define I2C_INT_PRIO_LEVEL				6    // Interrupt priority level
@@ -187,7 +186,7 @@ static volatile bool i2c_RxInProgress, firstRx;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem, waitSem; // Tx semaphores
-static QueueHandle_t 	 rxDataQueue, rxIndexQueue; // Rx Queues
+static QueueHandle_t 	 rxIndexQueue; // Rx Queues
 
 // Shared memory handle
 static SharedMem_t		 i2cSharedMem;
@@ -216,8 +215,6 @@ static inline int16_t *getRxDMACtrlAddr();
 void i2cTransferComplete(unsigned int channel, bool primary, void *user);
 
 int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout);
-
-static void vI2CReceiveTask(void *handle);
 
 void i2cDMA_ChannelInit(int TX, int RX);
 
