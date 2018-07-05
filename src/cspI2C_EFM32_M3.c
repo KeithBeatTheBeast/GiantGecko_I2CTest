@@ -70,6 +70,8 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
  ***********************************************************/
 int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 
+	// Wait for the current frame the driver is trying to send to be sent successfully
+	// or run out of re-tries.
 	if (xSemaphoreTake(waitSem, timeout) != pdTRUE) {
 		return WAIT_TO_ERR;
 	}
@@ -77,12 +79,13 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 	for (uint8_t i = 0; i < frame->retries; i++) {
 
 		transmissionError = NO_TRANS_ERR; // Set error flag to zero. This can be modified by the ISR
-		I2CRegs->CMD |= I2C_CMD_CLEARTX;
+		I2CRegs->CMD |= I2C_CMD_CLEARTX;  // Clear the Tx Buffer and Tx Shift Register
 
-		// Load address.
-		I2CRegs->TXDATA = frame->dest & I2C_WRITE;
+		I2CRegs->TXDATA = frame->dest & I2C_WRITE; // Load slave address.
 
-		// Active DMA for Tx
+		// Invoke the DMA for the transfer. It will load a new byte into
+		// the Tx register when the Tx ISR flag goes up.
+		// I assume the header is not bad.
 		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
 				true,
 				false,
@@ -90,8 +93,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 				frame,
 				CSP_I2C_HEADER_LEN + frame->len - 1);
 
-		// Issue start condition
-		I2CRegs->CMD |= I2C_CMD_START;
+		I2CRegs->CMD |= I2C_CMD_START; // Issue the start condition
 
 		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
 		// The reason why the semaphore is here is because the function
@@ -101,8 +103,9 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 			transmissionError |= TIMEOUT_ERR;
 		}
 
+		// An error has occurred. It may have been a timeout, or arbitration was lost, etc
 		if (transmissionError > 0) {
-			//if (transmissionError > 1) {printf("Error: %x, IF: %x\n", transmissionError, I2CRegs->IF);}
+			// Right now in all cases, an abort command is issued, and we wait.
 			I2CRegs->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
@@ -132,9 +135,10 @@ static void vI2CReceiveTask(void *nothing) {
 
 		cspBuf->len = index - CSP_I2C_HEADER_LEN;
 
-		printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %d, Len_rx: %d, Len: %d, \n Data: %d\n", \
+		printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %x, Len_rx: %d, Len: %d, \n Data: %s\n", \
 				cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
-		vPortFree(cspBuf); // TODO this will be the responsibility of the upper layer to get rid of.
+		//csp_i2c_rx(cspBuf, void * pxTaskWoken) TODO uncomment.
+		vPortFree(cspBuf);
 	}
 }
 
@@ -197,7 +201,7 @@ uint8_t i2c_FreeRTOS_Structs_Init() {
 	if (busySem == NULL) {err |= TX_SEM1_INIT_ERR;}
 
 	waitSem = xSemaphoreCreateBinary();
-	if (waitSem == NULL) {err |= TX_SEM2_INIT_ERR;}
+	if (waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE) {err |= TX_SEM2_INIT_ERR;}
 
 	// Create the rx queue and report on it
 	rxDataQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(uint8_t *));
