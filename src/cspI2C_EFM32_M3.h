@@ -71,6 +71,10 @@
 #include "queue.h"
 
 /*
+ * CSP Errors
+ */
+#include "csp_error.h"
+/*
  * Dependencies developed by me.
  */
 #include "cspDMA_EFM32_M3.h"

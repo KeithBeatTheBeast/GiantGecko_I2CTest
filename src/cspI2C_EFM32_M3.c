@@ -208,7 +208,6 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	// Then enable pins
 	// Then init DMA channels
 	enum IRQn I2C_IRQ;
-	uint8_t I2C_Port, I2C_SDA, I2C_SCL;
 	if (handle == 0){
 		I2CRegs = I2C0;
 		CMU_ClockEnable(cmuClock_I2C0, true);
