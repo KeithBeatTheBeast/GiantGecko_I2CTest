@@ -97,7 +97,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		I2CRegs->CMD |= I2C_CMD_START; // Issue the start condition
 
 		// Pend the semaphore.
-		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
+		if (xSemaphoreTake(busySem, timeout) != pdTRUE) {
 			transmissionError |= TIMEOUT_ERR;
 		}
 
@@ -315,7 +315,7 @@ void I2C1_IRQHandler() {
 		  // Ack the address or else it will be interpreted as a NACK.
 		  I2CRegs->CMD = I2C_CMD_ACK;
 
-		  // Pend the shared memory for a buffer pointer.
+		  // Pend the shared memory for a buffer pointer. TODO get from CSP
 		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
 		  // The buffer pend returned true, so we can accept the transmission.
