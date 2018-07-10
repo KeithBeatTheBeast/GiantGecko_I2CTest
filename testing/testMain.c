@@ -22,13 +22,15 @@ static void vI2CTransferTask(void *nothing) {
 	theFrame->retries = 5;
 
 	int k = 0;
-	int r = 0;
+	int e = 0;
 	while (1) {
-		r = i2c_send(1, theFrame, portTICK_PERIOD_MS * 4);
-		if (r == CSP_ERR_NONE) {
-			printf("Size of frame: %d, Number runs: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, ++k);
+		e = i2c_send(1, theFrame, portTICK_PERIOD_MS * 4);
+		if (e == CSP_ERR_NONE) {
+			k++;
 		}
-		//vTaskDelay(portTICK_PERIOD_MS * 1);
+		else {
+			printf("F: %d E: %x R: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, e, k);
+		}
 	}
 }
 

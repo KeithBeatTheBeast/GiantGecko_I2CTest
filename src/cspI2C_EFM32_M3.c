@@ -122,10 +122,10 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		}
 
 		// A driver-layer error has occurred. It may have been a timeout, or arbitration was lost, etc
-		if (transmissionError > 0) {
+		if (transmissionError != NO_TRANS_ERR) {
 			// Right now in all cases, an abort command is issued, and we wait.
 			I2CRegs->CMD |= I2C_CMD_ABORT;
-			vTaskDelay(portTICK_PERIOD_MS * 0.5);
+			vTaskDelay(portTICK_PERIOD_MS);
 		}
 		else { // No error occured. Release the "module in use" semaphore and return no error code.
 			xSemaphoreGive(waitSem);
@@ -135,7 +135,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 	// If we reached this point, we ran out of attempts to send the frame.
 	// Driver layer errors occurred. Release the semaphore and report that.
 	xSemaphoreGive(waitSem);
-	return CSP_ERR_DRIVER;
+	return transmissionError; // TODO change to CSP_ERR_DRIVER
 }
 
 /******************************************************************************
