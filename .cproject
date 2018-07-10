@@ -114,6 +114,7 @@
 									<listOptionValue builtIn="false" value="EFM32GG990F1024=1"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1159569260" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
+								<inputType id="org.eclipse.cdt.core.asmSource.1672316623" superClass="org.eclipse.cdt.core.asmSource"/>
 							</tool>
 							<tool id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.base.1485343576" name="GNU ARM C Linker" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.base">
 								<option id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.nostdlibs.1255416758" name="No startup or default libs (-nostdlib)" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.nostdlibs" value="false" valueType="boolean"/>
@@ -245,6 +246,7 @@
 									<listOptionValue builtIn="false" value="EFM32GG990F1024=1"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.assembler.input.1548719933" superClass="cdt.managedbuild.tool.gnu.assembler.input"/>
+								<inputType id="org.eclipse.cdt.core.asmSource.2122430878" superClass="org.eclipse.cdt.core.asmSource"/>
 							</tool>
 							<tool id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.base.2066700949" name="GNU ARM C Linker" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.base">
 								<option id="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.nostdlibs.1588035145" name="No startup or default libs (-nostdlib)" superClass="com.silabs.ide.si32.gcc.cdt.managedbuild.tool.gnu.c.linker.nostdlibs" value="false" valueType="boolean"/>
