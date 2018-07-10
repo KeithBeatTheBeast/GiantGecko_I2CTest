@@ -10,6 +10,28 @@
 
 #include "cspI2C_EFM32_M3.h"
 
+/***********
+ * GLOBALS
+ **********/
+// Error Flag for Tx
+static volatile uint16_t transmissionError;
+
+// Pointer to structure where the I2C Registers are found. Assigned at runtime depending on module
+static I2C_TypeDef *I2CRegs;
+
+// Rx Buffer - Constantly changes but needed for ISR.
+static uint8_t *i2c_Rx;
+
+// Rx buffer index/first transmission flag.
+static volatile bool i2c_RxInProgress, firstRx;
+
+// FreeRTOS handles
+static SemaphoreHandle_t busySem, waitSem; // Tx semaphores
+static QueueHandle_t 	 rxIndexQueue; // Rx Queues
+
+// Shared memory handle
+static SharedMem_t		 i2cSharedMem;
+
 /********************************************************************
  * @brief Inline function for calculating the address of the
  * CTRL register of the RX Channel's Descriptor
@@ -122,7 +144,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
  * @brief Setup the DMA channels for I2C
  * All functions called here are void, so we only return void.
  *****************************************************************************/
-void i2cDMA_ChannelInit(int TX, int RX) {
+static void i2cDMA_ChannelInit(int TX, int RX) {
 
 	/* Initialization Struct, and the Tx Structs */
 	DMA_CfgChannel_TypeDef  txChannelConfig;

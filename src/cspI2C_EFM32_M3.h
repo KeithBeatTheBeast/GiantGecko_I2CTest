@@ -99,9 +99,6 @@
 #define I2C1_SDA						4
 #define I2C_ROUTE_LOC					0
 
-// Error Flag for Tx
-static volatile uint16_t transmissionError;
-
 /* Error codes for transmissionError field below */
 #define NO_TRANS_ERR					0x00
 #define NACK_ERR						0x01
@@ -168,31 +165,12 @@ typedef struct __attribute__((packed)) i2c_frame_s {
     uint8_t data[I2C_MTU];
 } i2c_frame_t;
 
-// Pointer to structure where the I2C Registers are found. Assigned at runtime depending on module
-I2C_TypeDef *I2CRegs;
-
-// Rx Buffer - Constantly changes but needed for ISR.
-uint8_t *i2c_Rx;
-
-// Rx buffer index/first transmission flag.
-static volatile bool i2c_RxInProgress, firstRx;
-
-// FreeRTOS handles
-static SemaphoreHandle_t busySem, waitSem; // Tx semaphores
-static QueueHandle_t 	 rxIndexQueue; // Rx Queues
-
-// Shared memory handle
-static SharedMem_t		 i2cSharedMem;
-
 // The statically allocated shared memory
 //uint8_t staticSharedMemBufs[NUM_SH_MEM_BUFS][MAX_FRAME_SIZE];
 
-/********************************************************************
- * @brief Inline function for calculating the address of the
- * CTRL register of the RX Channel's Descriptor
- */
-static inline int16_t *getRxDMACtrlAddr();
-
+/*******************************************************************
+ * Non-static (e.g. interact with external code) go here!
+ ******************************************************************/
 /********************************************************************
  * @brief Function called when DMA transfer is complete.
  *
@@ -207,10 +185,14 @@ static inline int16_t *getRxDMACtrlAddr();
  *******************************************************************/
 void i2cTransferComplete(unsigned int channel, bool primary, void *user);
 
+/*********************************************************************
+ * @brief i2c_send function as per the prototype of CSP.
+ ********************************************************************/
 int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout);
 
-void i2cDMA_ChannelInit(int TX, int RX);
-
+/*********************************************************************
+ * @brief i2c_init function as per the prototype from CSP.
+ ********************************************************************/
 int csp_i2c_init(uint8_t opt_addr, int handle, int speed);
 
 /*****************************************************************************
