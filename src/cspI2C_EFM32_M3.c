@@ -113,13 +113,14 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		}
 	}
 	// If we reached this point, we ran out of attempts to send the frame.
-	// Driver layer errors occured. Release the semaphore and report that.
+	// Driver layer errors occurred. Release the semaphore and report that.
 	xSemaphoreGive(waitSem);
 	return CSP_ERR_DRIVER;
 }
 
 /******************************************************************************
  * @brief Setup the DMA channels for I2C
+ * All functions called here are void, so we only return void.
  *****************************************************************************/
 void i2cDMA_ChannelInit(int TX, int RX) {
 
@@ -170,23 +171,23 @@ void i2cDMA_ChannelInit(int TX, int RX) {
  *****************************************************************************/
 uint8_t i2c_FreeRTOS_Structs_Init() {
 
-	uint8_t err = NO_INIT_ERR;
-
 	// Create the Tx timeout semaphore.
 	busySem = xSemaphoreCreateBinary();
-	if (busySem == NULL) {err |= TX_SEM1_INIT_ERR;}
-
 	waitSem = xSemaphoreCreateBinary();
-	if (waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE) {err |= TX_SEM2_INIT_ERR;}
-
 	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
-	if (rxIndexQueue == NULL) {err |= RX_INDEX_INIT_ERR;}
-
 	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS);
 	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
-	if (i2cSharedMem == NULL) {err |= SH_MEM_INIT_ERR;}
 
-	return err;
+	// If the initialization of one failed, the driver cannot work. Delete all of them!
+	if (busySem == NULL || waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE || \
+			rxIndexQueue == NULL || i2cSharedMem == NULL) {
+		vSemaphoreDelete(busySem);
+		vSemaphoreDelete(waitSem);
+		vQueueDelete(rxIndexQueue);
+		// TODO implement delete function for shared memory!
+		return CSP_ERR_NOMEM;
+	}
+	return CSP_ERR_NONE; // No error
 }
 
 /**************************************************************************//**

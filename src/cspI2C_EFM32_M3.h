@@ -115,11 +115,6 @@ static volatile uint16_t transmissionError;
 
 /* Error Codes for the initialization functions. */
 #define NO_INIT_ERR						0x00
-#define TX_SEM1_INIT_ERR				0x01
-#define TX_SEM2_INIT_ERR				0x02
-#define RX_DATA_INIT_ERR				0x04
-#define RX_INDEX_INIT_ERR				0x08
-#define SH_MEM_INIT_ERR					0x10
 #define UNDEF_HANDLE					0x20
 #define UNSUPPORTED_SPEED				0x40
 #define RX_TASK_CREATE_FAIL				0x80
