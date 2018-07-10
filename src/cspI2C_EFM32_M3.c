@@ -74,7 +74,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 	// Wait for the current frame the driver is trying to send to be sent successfully
 	// or run out of re-tries.
 	if (xSemaphoreTake(waitSem, timeout) != pdTRUE) {
-		return WAIT_TO_ERR;
+		return CSP_ERR_TIMEDOUT;
 	}
 
 	for (uint8_t i = 0; i < frame->retries; i++) {
@@ -84,7 +84,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 
 		I2CRegs->TXDATA = frame->dest & I2C_WRITE; // Load slave address.
 
-		// Invoke the DMA for the transfer. It will load a new byte into
+		// Prime/invoke the DMA for the transfer. It will load a new byte into
 		// the Tx register when the Tx ISR flag goes up.
 		// I assume the header is not bad.
 		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
@@ -96,27 +96,26 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 
 		I2CRegs->CMD |= I2C_CMD_START; // Issue the start condition
 
-		// Pend the semaphore. This semaphore is initialized by main and given by the ISR
-		// The reason why the semaphore is here is because the function
-		// will eventually become a task where at the top, we pend a queue.
+		// Pend the semaphore.
 		if (xSemaphoreTake(busySem, portTICK_PERIOD_MS * TX_SEM_TO_MULTIPLIER) != pdTRUE) {
-			I2CRegs->CMD = I2C_CMD_ABORT;
 			transmissionError |= TIMEOUT_ERR;
 		}
 
-		// An error has occurred. It may have been a timeout, or arbitration was lost, etc
+		// A driver-layer error has occurred. It may have been a timeout, or arbitration was lost, etc
 		if (transmissionError > 0) {
 			// Right now in all cases, an abort command is issued, and we wait.
 			I2CRegs->CMD |= I2C_CMD_ABORT;
 			vTaskDelay(portTICK_PERIOD_MS * 0.5);
 		}
-		else {
+		else { // No error occured. Release the "module in use" semaphore and return no error code.
 			xSemaphoreGive(waitSem);
-			return 0;
+			return CSP_ERR_NONE;
 		}
 	}
+	// If we reached this point, we ran out of attempts to send the frame.
+	// Driver layer errors occured. Release the semaphore and report that.
 	xSemaphoreGive(waitSem);
-	return transmissionError;
+	return CSP_ERR_DRIVER;
 }
 
 /******************************************************************************

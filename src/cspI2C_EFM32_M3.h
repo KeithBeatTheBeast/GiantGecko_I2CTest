@@ -112,7 +112,6 @@ static volatile uint16_t transmissionError;
 #define E_QUEUE_ERR						0x40
 #define F_QUEUE_ERR						0x80
 #define ABORT_BUSHOLD					0x100
-#define WAIT_TO_ERR						0x200
 
 /* Error Codes for the initialization functions. */
 #define NO_INIT_ERR						0x00
