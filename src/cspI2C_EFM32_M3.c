@@ -135,7 +135,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 	// If we reached this point, we ran out of attempts to send the frame.
 	// Driver layer errors occurred. Release the semaphore and report that.
 	xSemaphoreGive(waitSem);
-	return transmissionError; // TODO change to CSP_ERR_DRIVER
+	return CSP_ERR_DRIVER;
 }
 
 /******************************************************************************
