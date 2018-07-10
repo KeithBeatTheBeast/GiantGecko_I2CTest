@@ -7,7 +7,7 @@
  *      THIS IS TEST CODE DO NOT ADD IMPORT IT INTO CSP AS PART OF THE DRIVER.
  */
 
-#include "cspI2C_EFM32_M3.h"
+#include "../src/cspI2C_EFM32_M3.h"
 #include "makePrintfWork.h"
 
 static void vI2CTransferTask(void *nothing) {
