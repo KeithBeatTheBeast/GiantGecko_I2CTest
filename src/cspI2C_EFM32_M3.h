@@ -83,7 +83,8 @@
 /* Defines*/
 #define CSP_SADDR_MASK					0x7F // Slave Address Mask
 #define I2C_WRITE					    0xFE // Should always be Master Trans/Slave Rec
-#define I2C_READ					    0xFF // Future Potential Functionality
+#define STANDARD_CLK					100  // 100kbit/s clock
+#define FAST_CLK						400	 // 400kbit/s clock
 #define I2C_INT_PRIO_LEVEL				6    // Interrupt priority level
 #define TX_INDEX_INIT					-1   // Tx index start value, is pre-incremented in code
 #define TX_SEM_TO_MULTIPLIER			10   // Multiplied by portTICK_PERIOD_MS to determine timeout period.
@@ -112,12 +113,6 @@ static volatile uint16_t transmissionError;
 #define E_QUEUE_ERR						0x40
 #define F_QUEUE_ERR						0x80
 #define ABORT_BUSHOLD					0x100
-
-/* Error Codes for the initialization functions. */
-#define NO_INIT_ERR						0x00
-#define UNDEF_HANDLE					0x20
-#define UNSUPPORTED_SPEED				0x40
-#define RX_TASK_CREATE_FAIL				0x80
 
 /*
  * ISR Interrupt Enable Lines
@@ -215,11 +210,6 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user);
 int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout);
 
 void i2cDMA_ChannelInit(int TX, int RX);
-
-/******************************************************************************
- * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
- *****************************************************************************/
-uint8_t i2c_FreeRTOS_Structs_Init();
 
 int csp_i2c_init(uint8_t opt_addr, int handle, int speed);
 

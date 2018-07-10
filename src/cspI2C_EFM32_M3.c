@@ -166,10 +166,20 @@ void i2cDMA_ChannelInit(int TX, int RX) {
 	DMA_CfgDescr(DMA_CHANNEL_I2C_RX, true, &rxDescriptorConfig);
 }
 
+/*****************************************************************************
+ * @brief Deletes FreeRTOS objects
+ ****************************************************************************/
+static inline void i2c_FreeRTOS_Structs_Del() {
+	vSemaphoreDelete(busySem);
+	vSemaphoreDelete(waitSem);
+	vQueueDelete(rxIndexQueue);
+	// TODO implement delete function for shared memory!
+}
+
 /******************************************************************************
  * @brief Initializes the Tx Semaphore, Rx Data and Index queues, and shared memory
  *****************************************************************************/
-uint8_t i2c_FreeRTOS_Structs_Init() {
+static int8_t i2c_FreeRTOS_Structs_Init() {
 
 	// Create the Tx timeout semaphore.
 	busySem = xSemaphoreCreateBinary();
@@ -181,10 +191,7 @@ uint8_t i2c_FreeRTOS_Structs_Init() {
 	// If the initialization of one failed, the driver cannot work. Delete all of them!
 	if (busySem == NULL || waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE || \
 			rxIndexQueue == NULL || i2cSharedMem == NULL) {
-		vSemaphoreDelete(busySem);
-		vSemaphoreDelete(waitSem);
-		vQueueDelete(rxIndexQueue);
-		// TODO implement delete function for shared memory!
+		i2c_FreeRTOS_Structs_Del();
 		return CSP_ERR_NOMEM;
 	}
 	return CSP_ERR_NONE; // No error
@@ -196,10 +203,11 @@ uint8_t i2c_FreeRTOS_Structs_Init() {
  *****************************************************************************/
 int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
-	// Error Code to be passed back.
-	int err = NO_INIT_ERR;
-
-	err |= i2c_FreeRTOS_Structs_Init();
+	// Initialize all FreeRTOS structures required for the driver to run.
+	int rtosErr = i2c_FreeRTOS_Structs_Init();
+	// If initalization failed for WHATEVER reason, e.g. this is extensibe code for mutliple
+	// bad error conditions, return said error condition.
+	if (rtosErr != CSP_ERR_NONE) { return rtosErr;}
 
 	// Decision block for which I2C module to use.
 	// First we decide which registers
@@ -230,7 +238,10 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		i2cDMA_ChannelInit(DMAREQ_I2C1_TXBL, DMAREQ_I2C1_RXDATAV);
 	}
 
-	else { return err |= UNDEF_HANDLE;}
+	else {
+		i2c_FreeRTOS_Structs_Del();
+		return CSP_ERR_INVAL;
+	}
 
 	/*
 	* Changing the priority of I2C1 IRQ.
@@ -241,12 +252,12 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	*/
 	NVIC_SetPriority(I2C_IRQ, I2C_INT_PRIO_LEVEL);
 
-	if (speed == 100) {
+	if (speed == STANDARD_CLK) {
 		I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
 		I2C_Init(I2CRegs, &i2cInit);
 	}
 
-	else if (speed == 400) {
+	else if (speed == FAST_CLK) {
 		I2C_Init_TypeDef i2cInit = { \
 			true, \
 			true, \
@@ -258,7 +269,8 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	}
 
 	else {
-		return err |= UNSUPPORTED_SPEED;
+		i2c_FreeRTOS_Structs_Del();
+		return CSP_ERR_INVAL;
 	}
 
 	/* Enable pins at location 1 */
@@ -288,7 +300,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		I2CRegs->CMD = I2C_CMD_ABORT;
 	}
 
-	return err;
+	return CSP_ERR_NONE; // Everything went fine. Good to go!
 }
 
 /*****************************************************************************
