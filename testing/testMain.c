@@ -15,18 +15,20 @@ static void vI2CTransferTask(void *nothing) {
 	i2c_frame_t *theFrame = pvPortMalloc(sizeof(i2c_frame_t));
 	memcpy(theFrame->data, "TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting ", I2C_MTU);
 	theFrame->dest = 0xE2;
-	theFrame->len = 990;
+	theFrame->len = 1;
 	theFrame->len_rx = 5;
 	theFrame->padding = 1;
 	theFrame->reserved = 554;
 	theFrame->retries = 5;
 
+	int k = 0;
+	int r = 0;
 	while (1) {
-		theFrame->len %= 1014;
-		if (theFrame->len == 0) {theFrame->len = 50;}
-		i2c_send(1, theFrame, portTICK_PERIOD_MS * 4);
-		vTaskDelay(portTICK_PERIOD_MS * 1);
-		theFrame->len++;
+		r = i2c_send(1, theFrame, portTICK_PERIOD_MS * 4);
+		if (r == CSP_ERR_NONE) {
+			printf("Size of frame: %d, Number runs: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, ++k);
+		}
+		//vTaskDelay(portTICK_PERIOD_MS * 1);
 	}
 }
 
