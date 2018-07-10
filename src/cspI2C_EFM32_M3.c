@@ -80,10 +80,8 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 			count--;
 		}
 
-		printf("DMA: %d\n", count);
 		if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
 			transmissionError |= F_QUEUE_ERR;
-			puts("Index Queue Send Error");
 		}
 	}
 }
@@ -447,7 +445,6 @@ void I2C1_IRQHandler() {
 		  if (xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL) != pdTRUE) {
 		  }
 
-		  printf("Len: %d\n", cspBuf->len);
 		  i2c_RxInProgress = false;
 
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // TODO comment out this/remove, use CSP buffers.
