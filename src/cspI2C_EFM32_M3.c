@@ -72,12 +72,12 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
 		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
-		uint16_t count = I2C_MTU - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) -1 ;
+		uint16_t count = I2C_MTU - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) + 1 ;
 
 		// I literally put this here to prevent a size misalignment on the first transfer.
 		if (firstRx) {
 			firstRx = false;
-			count--;
+			count = count - 2;
 		}
 
 		if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
@@ -347,12 +347,6 @@ void I2C1_IRQHandler() {
 	   */
 	  if (flags & I2C_IF_ADDR ) {
 
-		  // Ack the address or else it will be interpreted as a NACK.
-		  //I2CRegs->CMD = I2C_CMD_ACK;
-
-		  // Pend the shared memory for a buffer pointer. TODO get from CSP
-		  //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
-
 		  // If the previous pend failed the buffer variable will be set to pdFALSE
 		  // Since it is not, we have a pointer to use
 		  if (i2c_Rx != pdFALSE) {
@@ -363,9 +357,10 @@ void I2C1_IRQHandler() {
 			  DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
 					  true,
 					  false,
-					  (void*)i2c_Rx + 1,
+					  (void*)i2c_Rx + 2,
 					  (void*)&(I2CRegs->RXDATA),
 					  I2C_MTU - 1);
+			  i2c_Rx[1] = I2CRegs->RXDATA;
 		  }
 
 		  // No pointers are available so we cannot accept the data.
@@ -437,6 +432,8 @@ void I2C1_IRQHandler() {
 	  // We were Rx'ing stuff, so we had a buffer, etc.
 	  if (i2c_RxInProgress) {
 
+		  i2c_RxInProgress = false; // We are no longer in Rx.
+
 		  // Cast the Rx buffer as a CSP I2C Frame.
 		  i2c_frame_t *cspBuf = (i2c_frame_t*)i2c_Rx;
 
@@ -446,9 +443,7 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL);
 
-		  i2c_RxInProgress = false; // We are no longer in Rx.
-
-		  printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %d, Len_rx: %d, Len: %d, \n Data: %d\n", \
+		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
 				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // TODO comment out this/remove, use CSP buffers.

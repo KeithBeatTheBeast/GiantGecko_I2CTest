@@ -16,10 +16,10 @@ static void vI2CTransferTask(void *nothing) {
 	memcpy(theFrame->data, "TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting ", I2C_MTU);
 	theFrame->dest = 0xE2;
 	theFrame->len = 246;
-	theFrame->len_rx = 5;
-	theFrame->padding = 1;
+	theFrame->len_rx = 0x40;
+	theFrame->padding = 0x21;
 	theFrame->reserved = 554;
-	theFrame->retries = 5;
+	theFrame->retries = 0x23;
 
 	int k = 0;
 	int e = 0;
@@ -41,8 +41,12 @@ int main(void) {
 	/* Setting up DMA Controller */
 	cspDMA_Init(CSP_HPROT);
 
-	csp_i2c_init(0xE2, 1, 400);
+	if (csp_i2c_init(0xE2, 1, 400) == CSP_ERR_NONE) {
 
-	xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
-	vTaskStartScheduler();
+		xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+		vTaskStartScheduler();
+	}
+	else {
+		puts("There was an error in csp_i2c_init! Scheduler NOT started.");
+	}
 }
