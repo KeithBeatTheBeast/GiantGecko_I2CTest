@@ -135,7 +135,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 	// If we reached this point, we ran out of attempts to send the frame.
 	// Driver layer errors occurred. Release the semaphore and report that.
 	xSemaphoreGive(waitSem);
-	return CSP_ERR_DRIVER;
+	return transmissionError; // TODO CSP_ERR_DRIVER;
 }
 
 /******************************************************************************
@@ -201,11 +201,10 @@ static inline void i2c_FreeRTOS_Structs_Del() {
  *****************************************************************************/
 static int8_t i2c_FreeRTOS_Structs_Init() {
 
-	// Create the Tx timeout semaphore.
-	busySem = xSemaphoreCreateBinary();
-	waitSem = xSemaphoreCreateBinary();
-	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t));
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS);
+	busySem = xSemaphoreCreateBinary(); // While Tx in progress.
+	waitSem = xSemaphoreCreateBinary(); // Waiting for another frame to transmit.
+	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t)); // Passed from DMA IRQ to I2C IRQ
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS); // Shared buffs TODO CSP
 	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
 
 	// If the initialization of one failed, the driver cannot work. Delete all of them!
@@ -214,6 +213,9 @@ static int8_t i2c_FreeRTOS_Structs_Init() {
 		i2c_FreeRTOS_Structs_Del();
 		return CSP_ERR_NOMEM;
 	}
+
+	// Pre-allocate one of the pointers for the memory buff. TODO CSP
+	i2c_Rx = pSharedMemGet(i2cSharedMem);
 	return CSP_ERR_NONE; // No error
 }
 
@@ -225,7 +227,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
 	// Initialize all FreeRTOS structures required for the driver to run.
 	int rtosErr = i2c_FreeRTOS_Structs_Init();
-	// If initalization failed for WHATEVER reason, e.g. this is extensibe code for mutliple
+	// If initialization failed for WHATEVER reason, e.g. this is extensible code for multiple
 	// bad error conditions, return said error condition.
 	if (rtosErr != CSP_ERR_NONE) { return rtosErr;}
 
@@ -346,14 +348,13 @@ void I2C1_IRQHandler() {
 	  if (flags & I2C_IF_ADDR ) {
 
 		  // Ack the address or else it will be interpreted as a NACK.
-		  I2CRegs->CMD = I2C_CMD_ACK;
+		  //I2CRegs->CMD = I2C_CMD_ACK;
 
 		  // Pend the shared memory for a buffer pointer. TODO get from CSP
-		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+		  //i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
 
-		  // The buffer pend returned true, so we can accept the transmission.
-		  // Get the first byte, set up for AUTO-ACKs so the DMA handles all incoming
-		  // And activate the DMA. Done.
+		  // If the previous pend failed the buffer variable will be set to pdFALSE
+		  // Since it is not, we have a pointer to use
 		  if (i2c_Rx != pdFALSE) {
 			  // Setup DMA Transfer
 			  i2c_Rx[0] = I2CRegs->RXDATA;
@@ -367,7 +368,7 @@ void I2C1_IRQHandler() {
 					  I2C_MTU - 1);
 		  }
 
-		  // No pointers are availible so we cannot accept the data.
+		  // No pointers are available so we cannot accept the data.
 		  // Send a NACK and abort the transmission.
 		  else {
 			  I2CRegs->CMD = I2C_CMD_NACK | I2C_CMD_ABORT;
@@ -433,24 +434,40 @@ void I2C1_IRQHandler() {
    * By looking at a boolean set when the I2C_IF_ADDR flag was raised.
    */
   if (flags & (I2C_IF_SSTOP | I2C_IF_RSTART)) {
+	  // We were Rx'ing stuff, so we had a buffer, etc.
 	  if (i2c_RxInProgress) {
 
-		  //Cast the Rx buffer as a CSP I2C Frame.
+		  // Cast the Rx buffer as a CSP I2C Frame.
 		  i2c_frame_t *cspBuf = (i2c_frame_t*)i2c_Rx;
 
 		  // Tell the DMA to stop receiving bytes and report how many bytes were RX'd
 		  // NOTE: YOU ARE DEPENDANT ON THE DMA IRQ BEING OF HIGHER PRIORITY THAN THE I2C IRQ
 		  // THUS FORCING A CONTEXT SWITCH TO THE DMA IRQ THE MOMENT THIS FLAG IS RAISED!
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
-		  if (xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL) != pdTRUE) {
-		  }
+		  xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL);
 
-		  i2c_RxInProgress = false;
+		  i2c_RxInProgress = false; // We are no longer in Rx.
+
+		  printf("Padding: %d, Retries: %d, Reserved: %d, Dest: %d, Len_rx: %d, Len: %d, \n Data: %d\n", \
+				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // TODO comment out this/remove, use CSP buffers.
 		  //csp_i2c_rx(cspBuf, void * pxTaskWoken) TODO uncomment.
+
+		  i2c_Rx = pdFALSE;
 	  }
-	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK;
+
+	  // The buffer pointer was set to pdFalse either by
+	  // a) A previous line in the SSTOP/RSTART ISR after a previous frame had been received.
+	  // b) A previous execution of this conditional that failed before.
+	  if (i2c_Rx == pdFALSE) {
+		  // Now, pend a NEW MEMORY block for the next time we need it.
+		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+
+		  if (i2c_Rx == pdFALSE) { I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK; } // We did not get the block, so disable auto-ack.
+		  else { I2CRegs->CTRL |= I2C_CTRL_AUTOACK; } // We have a block ready, so setup auto-acks.
+	  }
+
       I2C_IntClear(I2CRegs, I2C_IFC_SSTOP | I2C_IFC_RSTART);
   }
 
