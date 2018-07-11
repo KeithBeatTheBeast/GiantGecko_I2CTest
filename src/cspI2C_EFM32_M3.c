@@ -125,7 +125,16 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		if (transmissionError != NO_TRANS_ERR) {
 			// Right now in all cases, an abort command is issued, and we wait.
 			I2CRegs->CMD |= I2C_CMD_ABORT;
-			vTaskDelay(portTICK_PERIOD_MS);
+
+			if (transmissionError & NACK_ERR) {
+				vTaskDelay(portTICK_PERIOD_MS);
+			}
+
+			else {
+				xSemaphoreGive(waitSem);
+				return transmissionError;
+			}
+
 		}
 		else { // No error occured. Release the "module in use" semaphore and return no error code.
 			xSemaphoreGive(waitSem);
@@ -443,8 +452,8 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL);
 
-		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
-				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
+//		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
+//				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // TODO comment out this/remove, use CSP buffers.
 		  //csp_i2c_rx(cspBuf, void * pxTaskWoken) TODO uncomment.
@@ -504,6 +513,7 @@ void I2C1_IRQHandler() {
 	  I2CRegs->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
+	  i2c_Rx = pdFALSE;
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 }
