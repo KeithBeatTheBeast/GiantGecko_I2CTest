@@ -475,7 +475,6 @@ void I2C1_IRQHandler() {
 	   */
 	  if (flags & I2C_IF_ADDR ) {
 
-		  I2CRegs->CMD |= I2C_CMD_ACK;
 		  // If the previous pend failed the buffer variable will be set to NULL
 		  // Since it is not, we have a pointer to use
 		  if (i2c_Rx != NULL) {
@@ -573,7 +572,7 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL);
 
-		  // Debug printf.
+		  // TODO Debug printf if desired
 //		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
 //				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 
@@ -632,7 +631,6 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_TX;
 	  }
 
-	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK;
 	  I2C_IntClear(I2CRegs, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2CRegs->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;
