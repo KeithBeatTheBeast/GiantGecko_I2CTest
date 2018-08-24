@@ -631,7 +631,7 @@ void I2C1_IRQHandler() {
 		  DMA->IFS = DMA_COMPLETE_I2C_TX;
 	  }
 
-	  I2C_IntClear(I2CRegs, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
+	  I2C_IntClear(I2CRegs, i2c_IFC_flags);
 	  I2CRegs->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;
 	  xSemaphoreGiveFromISR(busySem, NULL);
