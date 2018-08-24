@@ -71,11 +71,11 @@ SharedMem_t xSharedMemoryCreateStatic(void** staticArrayPtr, int16_t numBlocks) 
 /*
  * @brief Get the pointer to a block of memory, a cast is required.
  * @arg shMem - Handle of the memory block
- * @return Pointer to block of memory
+ * @return Pointer to block of memory, NULL if failed.
  */
 void *pSharedMemGet(SharedMem_t shMem) {
 	void* memBlock;
-	if (xQueueReceive(shMem, &memBlock, QUEUE_TO) == pdFALSE) {return pdFALSE;}
+	if (xQueueReceive(shMem, &memBlock, QUEUE_TO) == pdFALSE) {return NULL;}
 	return memBlock;
 }
 
@@ -83,12 +83,12 @@ void *pSharedMemGet(SharedMem_t shMem) {
  * @brief pSharedMemGet from an ISR
  * @arg shMem - Handle to the shared memory
  * @arg pxHTW Pointer to higher priority task woken.
- * @return Pointer to block of memory
+ * @return Pointer to block of memory, NULL if failed
  */
 void *pSharedMemGetFromISR(SharedMem_t shMem, BaseType_t *pxHTW) {
 
 	void* memBlock;
-	if (xQueueReceiveFromISR(shMem, &memBlock, pxHTW) == pdFALSE) {return pdFALSE;}
+	if (xQueueReceiveFromISR(shMem, &memBlock, pxHTW) == pdFALSE) {return NULL;}
 	return memBlock;
 }
 

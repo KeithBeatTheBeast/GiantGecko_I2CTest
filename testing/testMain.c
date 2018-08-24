@@ -29,9 +29,10 @@ static void vI2CTransferTask(void *nothing) {
 			k++;
 		}
 		else {
-			printf("F: %d E: %x R: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, e, k);
+			printf("Frame Size: %d Error: %x Number of Runs: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, e, k);
 		}
 	}
+	vTaskDelay(1000);
 }
 
 int main(void) {
@@ -41,7 +42,6 @@ int main(void) {
 	/* Setting up DMA Controller */
 	cspDMA_Init(CSP_HPROT);
 
-	printf("High: %d, Low: %d\n", DEVINFO->UNIQUEH, DEVINFO->UNIQUEL);
 	if (csp_i2c_init(0xE2, 1, 400) == CSP_ERR_NONE) {
 
 		xTaskCreate(vI2CTransferTask, (const char *) "I2CRegs_Tx", configMINIMAL_STACK_SIZE, NULL, 1, NULL);

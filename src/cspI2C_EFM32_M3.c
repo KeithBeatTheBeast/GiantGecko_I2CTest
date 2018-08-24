@@ -212,6 +212,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		// A driver-layer error has occurred. It may have been a timeout, or arbitration was lost, etc
 		if (transmissionError != NO_TRANS_ERR) {
 			// Right now in all cases, an abort command is issued, and we wait.
+			printf("%d\n", transmissionError);
 			if (transmissionError & NACK_ERR) {
 				I2CRegs->CMD |= I2C_CMD_ABORT;
 				vTaskDelay(portTICK_PERIOD_MS);
@@ -285,7 +286,7 @@ static void i2cDMA_ChannelInit(int TxChan, int TxReg, int RxChan, int RxReg) {
 	rxChannelConfig.enableInt  = true;
 	rxChannelConfig.select     = RxReg;
 	rxChannelConfig.cb 		   = &dmaCB;
-	DMA_CfgChannel(RxReg, &rxChannelConfig);
+	DMA_CfgChannel(RxChan, &rxChannelConfig);
 
 	/* Setting up RX channel descriptor
 	 * Same as setting up Tx Channel but mirrored increments. */
@@ -294,7 +295,7 @@ static void i2cDMA_ChannelInit(int TxChan, int TxReg, int RxChan, int RxReg) {
 	rxDescriptorConfig.size    = dmaDataSize1;
 	rxDescriptorConfig.arbRate = dmaArbitrate1;
 	rxDescriptorConfig.hprot   = 0;
-	DMA_CfgDescr(RxReg, true, &rxDescriptorConfig);
+	DMA_CfgDescr(RxChan, true, &rxDescriptorConfig);
 }
 
 /*****************************************************************************
@@ -474,11 +475,9 @@ void I2C1_IRQHandler() {
 	   */
 	  if (flags & I2C_IF_ADDR ) {
 
-		  // If the previous pend failed the buffer variable will be set to pdFALSE
+		  // If the previous pend failed the buffer variable will be set to NULL
 		  // Since it is not, we have a pointer to use
-		  // TODO this conditional changes depending on CSP usage.
-		  if (i2c_Rx != pdFALSE) { // Standalone
-		  //if (i2c_Rx == NULL) {  // CSP
+		  if (i2c_Rx != NULL) {
 
 			  // Setup DMA Transfer
 			  i2c_Rx[0] = I2CRegs->RXDATA; // Get the first byte of data.
@@ -579,22 +578,20 @@ void I2C1_IRQHandler() {
 
 		  // TODO this changes depending on standalone  or CSP
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
-		  i2c_Rx = pdFALSE; // Standalone
 		  //csp_i2c_rx(cspBuf, void * pxTaskWoken)  // CSP
-		  //i2c_Rx = NULL; 							// CSP
-
+		  i2c_Rx = NULL;
 	  }
 
 	  // The buffer pointer was set to pdFalse/NULL either by
 	  // a) A previous line in the SSTOP/RSTART ISR after a previous frame had been received.
 	  // b) A previous execution of this conditional that failed before.
-	  if (i2c_Rx == pdFALSE || i2c_Rx == NULL) {
+	  if (i2c_Rx == NULL) {
 
 		  // Now, pend a NEW MEMORY block for the next time we need it. TODO Standalone vs CSP
 		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL); // Standalone
 		  //i2c_Rx = csp_buffer_get_isr(I2C_MTU + CSP_I2C_HEADER_LEN); // CSP
 
-		  if (i2c_Rx == pdFALSE || i2c_Rx == NULL) { I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK; } // We did not get the block, so disable auto-ack.
+		  if (i2c_Rx == NULL) { I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK; } // We did not get the block, so disable auto-ack.
 		  else { I2CRegs->CTRL |= I2C_CTRL_AUTOACK; } // We have a block ready, so setup auto-acks.
 	  }
 
@@ -641,9 +638,8 @@ void I2C1_IRQHandler() {
 
 	  // Standalone vs CSP
 	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
-	  i2c_Rx = pdFALSE; // Standalone
 	  //csp_buffer_free_isr(i2c_Rx);	        // CSP
-	  //i2c_Rx = NULL; 							// CSP
+	  i2c_Rx = NULL;
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 }

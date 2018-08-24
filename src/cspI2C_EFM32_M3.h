@@ -23,11 +23,7 @@
  *	FreeRTOS protocol I developed when it is not integrated with a network stack e.g. CSP
  *	These non-Silabs dependency files are
  *	- cspDMA_EFM32_M3.c/h
- *	- SharedMemory.c/h
- *
- *	MIND THE TODO TAGS I HAVE PLACED THROUGHOUT THE CODE FOR COMMENTS
- *	ON SWITCHING BETWEEN HAVING THE DRIVER AS A STANDALONE AND INTEGRATING IT WITH
- *	CSP WHICH PROVIDES ACCESS TO BUFFERS.
+ *	- SharedMemory.c/h (If standalone)
  *
  *	Pull-up Resistors used:
  *	330 Ohms and 2.7 kOhms
