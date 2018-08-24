@@ -4,7 +4,79 @@
  *  Created on: Jun 29th, 2018
  *  Author: kgmills
  *
- *  Please see the header of the paired cspI2C_EFM32_M3.h file for details
+ *  The code was originally based off of and is heavily modified from the Silicon Labs Application Note:
+ *  https://www.silabs.com/support/resources.ct-application-notes.ct-example-code.p-microcontrollers_32-bit-mcus
+ *
+ *  See "AN0011: I2C Master and Slave Operation"
+ *  Also see "AN0013: Direct Memory Access" as this I2C Physical Layer Driver is dependent on the EFM32's
+ *  DMA controller for Tx/Rx operation - cspDMA_EFM32_M3 is a dependency
+ *
+ *  This is an I2C Driver for the EFM32 Giant Gecko using the ARM Cortex-M3 microprocessor.
+ *  It requires the use of FreeRTOS (developed with V7.4.2) to work.
+ *
+ *  As it is meant to be one interface for the physical layer of a CubeSat Network Stack, only
+ *  two modes of operation were implemented:
+ *	-MASTER TRANSMITTER
+ *	-SLAVE RECEIVER
+ *
+ *	The driver makes heavy use of the DMA controller within the EFM32 as well as a shared memory
+ *	FreeRTOS protocol I developed when it is not integrated with a network stack e.g. CSP
+ *	These non-Silabs dependency files are
+ *	- cspDMA_EFM32_M3.c/h
+ *	- SharedMemory.c/h
+ *
+ *	MIND THE TODO TAGS I HAVE PLACED THROUGHOUT THE CODE FOR COMMENTS
+ *	ON SWITCHING BETWEEN HAVING THE DRIVER AS A STANDALONE AND INTEGRATING IT WITH
+ *	CSP WHICH PROVIDES ACCESS TO BUFFERS.
+ *
+ *	Pull-up Resistors used:
+ *	330 Ohms and 2.7 kOhms
+ *
+ *	MTU Constraints:
+ *	Due to the nature of the DMA controller on the EFM32 with the Cortex-M3, the maximum transmission
+ *	length for a frame being sent by this driver is 1024 bytes.
+ *
+ *	Performance: With the DMA integrated, this driver was tested and checked with a clock controlled
+ *	variable of a 400kHz clock. Measuring the time it takes a transmission to complete on an oscilloscope,
+ *	the time taken for a 20 byte (1 byte address + 19 byte frame) message is roughly 500 Microseconds.
+ *  This entails a data rate of roughly 320kbit/s or 80% of maximum throughput.
+ *
+ *  A different driver can be developed from this one for the
+ *	Giant Gecko with the Cortex-M4, with the double-buffered
+ *	I2C Tx/Rx and LDMA. By my estimation, it's MTU will be roughly 4096 bytes.
+ *
+ *	To Accomplish this upgrade, you would need to do the following:
+ *
+ *	- When the DMA IRQ goes off for Rx, you need to modify the equation for
+ *	calculating the address of the CTRL register
+ *
+ *	- Likewise, when taking the # of transmissions left from the CTRL register,
+ *	the equation used will need to be modified and account for the fact that the
+ *	n_minus_1 (or equivalent) field is 11 bits long on the M4, where it is only
+ *	10 bits long on the M3
+ *
+ *	- To exceed an MTU of 2048 bytes, the DMA needs to be configured to
+ *	send 2 bytes (16 bits) at a time rather than 1 byte (8 bits) as it does now.
+ *
+ *	- Therefore, you will need to figure out a scheme for sending only the right
+ *	data and not +/- 1 byte of data. To do this, I propose:
+ *	-- When the size of the packet is odd, before invoking the DMA, place
+ *	the I2C Slave address and the first byte of packet data into the 16-bit Tx buffer.
+ *	Then invoke the DMA, with an initial start address being the 2nd byte of data.
+ *	-- When the size of the packet is even, load the address into the 16-bit buffer,
+ *	leave 1/2 of the Tx buffer empty, then invoke the DMA on the base address of data.
+ *
+ *	CURRENT ISSUES:
+ *	- The module doesn't like the transmit at its maximum MTU for long.
+ *	If I give it a 1024byte frame it will transmit once or twice and then get locked up.
+ *
+ *	- Likewise, when the module locks itself up, even reports the error, it does not recover
+ *	I cannot get it to properly reset and restart itself for additional transfers I have to reset
+ *	the development board or re-flash it.
+ *
+ *	- As the EFM32GG Dev board with the M3 can only route I2C SCL/SDA to one location
+ *	each, this driver only works when all "handle" input args are set to '1' and only
+ *	through the I2C1 module.
  *
  ******************************************************************************/
 
@@ -35,13 +107,18 @@ static SharedMem_t		 i2cSharedMem;
 /********************************************************************
  * @brief Inline function for calculating the address of the
  * CTRL register of the RX Channel's Descriptor
- */
+ *
+ * MATH: ADDRESS = (Channel Number * Size of a channel) + Offset to CTRL Register.
+ *
+ * THIS WILL NOT WORK FOR THE CORTEX-M4'S DMA.
+ *******************************************************************/
 static inline int16_t *getRxDMACtrlAddr() {
 	return DMA->CTRLBASE + (DMA_CHANNEL_I2C_RX * CHANNEL_MULT_OFFSET) + CTRL_ADD_OFFSET;
 }
 
 /********************************************************************
  * @brief Function called when DMA transfer is complete.
+ * Execution depends on whether Tx or Rx completed.
  *
  * THIS FUNCTION IS CALLED IN AN ISR CONTEXT BY THE DMA'S IRQ
  *
@@ -67,12 +144,18 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 
 	// RX has completed
 	// Calculate the number of bytes that were received in a transmission
-	// And send that number to the receiver task for processing to the next layer.
-	// The I2C IRQ will send the data buffer.
+	// Send to I2C IRQ.
+	// TODO might be a good idea to disable the DMA IRQ on the Rx channel and have the I2C IRQ do this.
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
-		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!" */
-		uint16_t count = I2C_MTU - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) + 1 ;
+		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!
+		 *
+		 * The goal of this line is to isolate the n_minus_1 field, and shift it.
+		 * Then, we take the maximum # of bytes possible, subtract the previously calculated number and add 1.
+		 *
+		 */
+		uint16_t count = I2C_MTU + CSP_I2C_HEADER_LEN
+				- ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) + 1 ;
 
 		// I literally put this here to prevent a size misalignment on the first transfer.
 		if (firstRx) {
@@ -80,6 +163,8 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 			count = count - 2;
 		}
 
+		// Send to I2C IRQ, which should immediantly receive as its lower priority and activated this interrupt.
+		// See what I meant about just having it do the calculation?
 		if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
 			transmissionError |= F_QUEUE_ERR;
 		}
@@ -88,35 +173,38 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 
 /************************************************************
  * @brief Function CSP calls to send.
+ * @param handle I2C Module to send from, on a dev board this can only be 1 and right now it doesn't do anything.
+ * @param *frame Address to the CSP I2C Frame to be sent.
+ * @param timeout Will not wait forever.
+ * @return error code
  ***********************************************************/
 int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 
-	// Wait for the current frame the driver is trying to send to be sent successfully
-	// or run out of re-tries.
+	// Wait for the driver to be free or timeout.
 	if (xSemaphoreTake(waitSem, timeout) != pdTRUE) {
 		return CSP_ERR_TIMEDOUT;
 	}
 
 	for (uint8_t i = 0; i < frame->retries; i++) {
 
-		transmissionError = NO_TRANS_ERR; // Set error flag to zero. This can be modified by the ISR
+		transmissionError = NO_TRANS_ERR; // Set error flag to zero. This can be modified by the ISR and used for debugging purposes.
 		I2CRegs->CMD |= I2C_CMD_CLEARTX;  // Clear the Tx Buffer and Tx Shift Register
 
-		I2CRegs->TXDATA = frame->dest & I2C_WRITE; // Load slave address.
+		I2CRegs->TXDATA = frame->dest & I2C_WRITE; // Load slave address with WRITE BIT.
 
-		// Prime/invoke the DMA for the transfer. It will load a new byte into
+		// Invoke the DMA for the transfer. It will load a new byte into
 		// the Tx register when the Tx ISR flag goes up.
 		// I assume the header is not bad.
-		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX,
-				true,
-				false,
-				&(I2CRegs->TXDATA),
-				frame,
-				CSP_I2C_HEADER_LEN + frame->len - 1);
+		DMA_ActivateBasic(DMA_CHANNEL_I2C_TX, // DMA Channel
+				true,						  // Primary Channel
+				false,						  // Do not use burst
+				&(I2CRegs->TXDATA),           // Destination Address
+				frame,						  // Source Address
+				CSP_I2C_HEADER_LEN + frame->len - 1); // Length of Transfer in Bytes
 
 		I2CRegs->CMD |= I2C_CMD_START; // Issue the start condition
 
-		// Pend the semaphore.
+		// Wait for the transfer to complete according to the timeout.
 		if (xSemaphoreTake(busySem, timeout) != pdTRUE) {
 			transmissionError |= TIMEOUT_ERR;
 		}
@@ -129,28 +217,41 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 				vTaskDelay(portTICK_PERIOD_MS);
 			}
 
-			else {
+			else { // TODO this is placed for debugging purposes.
+				// Instead of giving back the CSP error code, the driver-level error code is returned.
+				// Remove this layer of conditionals in the final version and have it always abort and
+				// vTaskDelay to calm down.
 				xSemaphoreGive(waitSem);
 				return transmissionError;
 			}
 
 		}
-		else { // No error occured. Release the "module in use" semaphore and return no error code.
+
+		// Transmission was successful.
+		// Release the module, return no error.
+		else {
 			xSemaphoreGive(waitSem);
 			return CSP_ERR_NONE;
 		}
 	}
+
 	// If we reached this point, we ran out of attempts to send the frame.
 	// Driver layer errors occurred. Release the semaphore and report that.
 	xSemaphoreGive(waitSem);
-	return transmissionError; // TODO CSP_ERR_DRIVER;
+
+	// TODO comment/uncomment depending on whether its standalone tests or with CSP
+	return transmissionError; // If standalone
+	//return CSP_ERR_DRIVER;  // If integrated with CSP
 }
 
 /******************************************************************************
  * @brief Setup the DMA channels for I2C
  * All functions called here are void, so we only return void.
+ *
+ * @param TX Tx DMA Channel
+ * @param RX Rx DMA Channel
  *****************************************************************************/
-static void i2cDMA_ChannelInit(int TX, int RX) {
+static void i2cDMA_ChannelInit(int TxChan, int TxReg, int RxChan, int RxReg) {
 
 	/* Initialization Struct, and the Tx Structs */
 	DMA_CfgChannel_TypeDef  txChannelConfig;
@@ -160,38 +261,40 @@ static void i2cDMA_ChannelInit(int TX, int RX) {
 	DMA_CfgDescr_TypeDef	rxDescriptorConfig;
 
 	/* Setup call-back function */
-	dmaCB.cbFunc  = i2cTransferComplete;
-	dmaCB.userPtr = NULL;
+	dmaCB.cbFunc  = i2cTransferComplete; // Function that is called in the ISR context.
+	dmaCB.userPtr = NULL;                // We're not passing that function any parameters.
 
 	/* Setting up TX channel */
-	txChannelConfig.highPri   = true;
-	txChannelConfig.enableInt = true;
-	txChannelConfig.select    = DMAREQ_I2C1_TXBL;
-	txChannelConfig.cb        = &dmaCB;
-	DMA_CfgChannel(DMA_CHANNEL_I2C_TX, &txChannelConfig);
+	txChannelConfig.highPri   = true;             // High Priority when arbitration.
+	txChannelConfig.enableInt = true;             // Yes, when the transfer is complete, the DMA IRQ will fire.
+	txChannelConfig.select    = TxReg; // Transfer when the modules I2C TX Buffer is empty. // TODO This will need to change for the M4.
+	txChannelConfig.cb        = &dmaCB;           // Information on what callback function is tied to this channel.
+	DMA_CfgChannel(TxChan, &txChannelConfig);
 
 	/* Setting up TX channel descriptor */
-	txDescriptorConfig.dstInc  = dmaDataIncNone;
-	txDescriptorConfig.srcInc  = dmaDataInc1;
-	txDescriptorConfig.size    = dmaDataSize1;
-	txDescriptorConfig.arbRate = dmaArbitrate1;
-	txDescriptorConfig.hprot   = 0;
-	DMA_CfgDescr(DMA_CHANNEL_I2C_TX, true, &txDescriptorConfig);
+	txDescriptorConfig.dstInc  = dmaDataIncNone; // Do not increment the destination address after each transfer as its a hardware register.
+	txDescriptorConfig.srcInc  = dmaDataInc1;    // Increment source register by 1 byte after each transfer.
+	txDescriptorConfig.size    = dmaDataSize1;   // The size of the data to be moved is 1 byte.
+	txDescriptorConfig.arbRate = dmaArbitrate1;  // Arbitrate after each transfer.
+	txDescriptorConfig.hprot   = 0;              // Protection is not an issue.
+	DMA_CfgDescr(TxChan, true, &txDescriptorConfig);
 
-	/* Setting up RX channel */
+	/* Setting up RX channel
+	 * Same as setting up the Tx Channel with Rx equivalents. */
 	rxChannelConfig.highPri    = true;
 	rxChannelConfig.enableInt  = true;
-	rxChannelConfig.select     = DMAREQ_I2C1_RXDATAV;
+	rxChannelConfig.select     = RxReg;
 	rxChannelConfig.cb 		   = &dmaCB;
-	DMA_CfgChannel(DMA_CHANNEL_I2C_RX, &rxChannelConfig);
+	DMA_CfgChannel(RxReg, &rxChannelConfig);
 
-	/* Setting up RX channel descriptor */
+	/* Setting up RX channel descriptor
+	 * Same as setting up Tx Channel but mirrored increments. */
 	rxDescriptorConfig.dstInc  = dmaDataInc1;
 	rxDescriptorConfig.srcInc  = dmaDataIncNone;
 	rxDescriptorConfig.size    = dmaDataSize1;
 	rxDescriptorConfig.arbRate = dmaArbitrate1;
 	rxDescriptorConfig.hprot   = 0;
-	DMA_CfgDescr(DMA_CHANNEL_I2C_RX, true, &rxDescriptorConfig);
+	DMA_CfgDescr(RxReg, true, &rxDescriptorConfig);
 }
 
 /*****************************************************************************
@@ -201,7 +304,6 @@ static inline void i2c_FreeRTOS_Structs_Del() {
 	vSemaphoreDelete(busySem);
 	vSemaphoreDelete(waitSem);
 	vQueueDelete(rxIndexQueue);
-	// TODO implement delete function for shared memory!
 }
 
 /******************************************************************************
@@ -209,27 +311,37 @@ static inline void i2c_FreeRTOS_Structs_Del() {
  *****************************************************************************/
 static int8_t i2c_FreeRTOS_Structs_Init() {
 
-	busySem = xSemaphoreCreateBinary(); // While Tx in progress.
-	waitSem = xSemaphoreCreateBinary(); // Waiting for another frame to transmit.
-	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t)); // Passed from DMA IRQ to I2C IRQ
-	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS); // Shared buffs TODO CSP
-	//i2cSharedMem = xSharedMemoryCreateStatic(staticSharedMemBufs, NUM_SH_MEM_BUFS); TODO fix
+	busySem = xSemaphoreCreateBinary(); // The driver is busy with someone else's frame.
+	waitSem = xSemaphoreCreateBinary(); // The driver is attempting to transmit my frame.
+	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t)); // Passed from DMA IRQ to I2C IRQ TODO this can be removed if I2C IRQ calculates bytes sent.
+
+	// TODO Comment this out when working with CSP.
+	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS);
 
 	// If the initialization of one failed, the driver cannot work. Delete all of them!
 	if (busySem == NULL || waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE || \
-			rxIndexQueue == NULL || i2cSharedMem == NULL) {
+			rxIndexQueue == NULL) {
 		i2c_FreeRTOS_Structs_Del();
 		return CSP_ERR_NOMEM;
 	}
 
-	// Pre-allocate one of the pointers for the memory buff. TODO CSP
-	i2c_Rx = pSharedMemGet(i2cSharedMem);
-	return CSP_ERR_NONE; // No error
+	// TODO comment out block when working with CSP.
+	if (i2cSharedMem == NULL) {
+		i2c_FreeRTOS_Structs_Del();
+		return CSP_ERR_NOMEM;
+	}
+
+	// TODO Pick depending on CSP or standalone.
+	i2c_Rx = pSharedMemGet(i2cSharedMem); // Standalone
+	//i2c_Rx = csp_buffer_get(I2C_MTU + CSP_I2C_HEADER_LEN); // CSP
+
+	return CSP_ERR_NONE;
 }
 
 /**************************************************************************//**
  * @brief  Main function
  * Main is called from __iar_program_start, see assembly startup file
+ * YOU MUST INITALIZE THE DMA USING cspDMA_Init(...) FIRST!
  *****************************************************************************/
 int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 
@@ -254,7 +366,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		GPIO_PinModeSet(I2C0_Ports, I2C0_SDA, gpioModeWiredAndPullUpFilter, 1);
 		GPIO_PinModeSet(I2C0_Ports, I2C0_SCL, gpioModeWiredAndPullUpFilter, 1);
 
-		i2cDMA_ChannelInit(DMAREQ_I2C0_TXBL, DMAREQ_I2C0_RXDATAV);
+		i2cDMA_ChannelInit(DMA_CHANNEL_I2C_TX, DMAREQ_I2C0_TXBL, DMA_CHANNEL_I2C_RX, DMAREQ_I2C0_RXDATAV);
 	}
 
 	else if (handle == 1) {
@@ -265,9 +377,10 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		GPIO_PinModeSet(I2C1_Ports, I2C1_SDA, gpioModeWiredAndPullUpFilter, 1);
 		GPIO_PinModeSet(I2C1_Ports, I2C1_SCL, gpioModeWiredAndPullUpFilter, 1);
 
-		i2cDMA_ChannelInit(DMAREQ_I2C1_TXBL, DMAREQ_I2C1_RXDATAV);
+		i2cDMA_ChannelInit(DMA_CHANNEL_I2C_TX, DMAREQ_I2C1_TXBL, DMA_CHANNEL_I2C_RX, DMAREQ_I2C1_RXDATAV);
 	}
 
+	// Add more channels if you want.
 	else {
 		i2c_FreeRTOS_Structs_Del();
 		return CSP_ERR_INVAL;
@@ -279,14 +392,18 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	* defined in FreeRTOSConfig.h
 	* Currently, that is set to 5.
 	* The I2C priority level goes to 6, and the DMA 5.
+	* If you want I2C to take priority above the DMA
+	* YOU MUST move the transfer calc code to the I2C IRQ first.
 	*/
 	NVIC_SetPriority(I2C_IRQ, I2C_INT_PRIO_LEVEL);
 
+	// Driver works for 100kbit/s
 	if (speed == STANDARD_CLK) {
 		I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
 		I2C_Init(I2CRegs, &i2cInit);
 	}
 
+	// Driver works for 400kbit/s
 	else if (speed == FAST_CLK) {
 		I2C_Init_TypeDef i2cInit = { \
 			true, \
@@ -298,6 +415,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 		I2C_Init(I2CRegs, &i2cInit);
 	}
 
+	// Driver doesn't work at 1Mbit/s because pickles.
 	else {
 		i2c_FreeRTOS_Structs_Del();
 		return CSP_ERR_INVAL;
@@ -322,6 +440,7 @@ int csp_i2c_init(uint8_t opt_addr, int handle, int speed) {
 	// Enable interrupts
 	I2C_IntClear(I2CRegs, i2c_IFC_flags);
 	I2C_IntEnable(I2CRegs, i2c_IEN_flags);
+	I2CRegs->CTRL |= I2C_CTRL_AUTOACK;
 	NVIC_EnableIRQ(I2C_IRQ);
 
 	// We're starting/restarting the board, so it assume the bus is busy
@@ -357,18 +476,21 @@ void I2C1_IRQHandler() {
 
 		  // If the previous pend failed the buffer variable will be set to pdFALSE
 		  // Since it is not, we have a pointer to use
-		  if (i2c_Rx != pdFALSE) {
+		  // TODO this conditional changes depending on CSP usage.
+		  if (i2c_Rx != pdFALSE) { // Standalone
+		  //if (i2c_Rx == NULL) {  // CSP
+
 			  // Setup DMA Transfer
-			  i2c_Rx[0] = I2CRegs->RXDATA;
-			  I2CRegs->CTRL |= I2C_CTRL_AUTOACK;
-			  i2c_RxInProgress = true;
-			  DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,
-					  true,
-					  false,
-					  (void*)i2c_Rx + 2,
-					  (void*)&(I2CRegs->RXDATA),
-					  I2C_MTU - 1);
-			  i2c_Rx[1] = I2CRegs->RXDATA;
+			  i2c_Rx[0] = I2CRegs->RXDATA; // Get the first byte of data.
+			  I2CRegs->CTRL |= I2C_CTRL_AUTOACK; // Enable automatic acknowledgements.
+			  i2c_RxInProgress = true; // Raise progress flag.
+			  DMA_ActivateBasic(DMA_CHANNEL_I2C_RX,      // Rx Channel
+					  true, 						     // Primary channel
+					  false,                             // No burst.
+					  (void*)i2c_Rx + 2,                 // Destination Register
+					  (void*)&(I2CRegs->RXDATA),         // Source register
+					  I2C_MTU + CSP_I2C_HEADER_LEN - 1); // Bytes to Rx
+			  i2c_Rx[1] = I2CRegs->RXDATA;               // 2nd byte arrived before DMA is ready.
 		  }
 
 		  // No pointers are available so we cannot accept the data.
@@ -447,27 +569,32 @@ void I2C1_IRQHandler() {
 
 		  // Tell the DMA to stop receiving bytes and report how many bytes were RX'd
 		  // NOTE: YOU ARE DEPENDANT ON THE DMA IRQ BEING OF HIGHER PRIORITY THAN THE I2C IRQ
-		  // THUS FORCING A CONTEXT SWITCH TO THE DMA IRQ THE MOMENT THIS FLAG IS RAISED!
+		  // THUS FORCING A CONTEXT SWITCH TO THE DMA IRQ THE MOMENT THIS FLAG IS RAISED
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
 		  xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL);
 
+		  // Debug printf.
 //		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
 //				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
 
-		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // TODO comment out this/remove, use CSP buffers.
-		  //csp_i2c_rx(cspBuf, void * pxTaskWoken) TODO uncomment.
+		  // TODO this changes depending on standalone  or CSP
+		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
+		  i2c_Rx = pdFALSE; // Standalone
+		  //csp_i2c_rx(cspBuf, void * pxTaskWoken)  // CSP
+		  //i2c_Rx = NULL; 							// CSP
 
-		  i2c_Rx = pdFALSE;
 	  }
 
-	  // The buffer pointer was set to pdFalse either by
+	  // The buffer pointer was set to pdFalse/NULL either by
 	  // a) A previous line in the SSTOP/RSTART ISR after a previous frame had been received.
 	  // b) A previous execution of this conditional that failed before.
-	  if (i2c_Rx == pdFALSE) {
-		  // Now, pend a NEW MEMORY block for the next time we need it.
-		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL);
+	  if (i2c_Rx == pdFALSE || i2c_Rx == NULL) {
 
-		  if (i2c_Rx == pdFALSE) { I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK; } // We did not get the block, so disable auto-ack.
+		  // Now, pend a NEW MEMORY block for the next time we need it. TODO Standalone vs CSP
+		  i2c_Rx = pSharedMemGetFromISR(i2cSharedMem, NULL); // Standalone
+		  //i2c_Rx = csp_buffer_get_isr(I2C_MTU + CSP_I2C_HEADER_LEN); // CSP
+
+		  if (i2c_Rx == pdFALSE || i2c_Rx == NULL) { I2CRegs->CTRL &= ~I2C_CTRL_AUTOACK; } // We did not get the block, so disable auto-ack.
 		  else { I2CRegs->CTRL |= I2C_CTRL_AUTOACK; } // We have a block ready, so setup auto-acks.
 	  }
 
@@ -511,8 +638,12 @@ void I2C1_IRQHandler() {
 	  I2C_IntClear(I2CRegs, I2C_IFC_ARBLOST | I2C_IFC_BUSERR | I2C_IFC_CLTO | I2C_IFC_BITO);
 	  I2CRegs->CMD = I2C_CMD_ABORT;
 	  i2c_RxInProgress = false;
-	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL);
-	  i2c_Rx = pdFALSE;
+
+	  // Standalone vs CSP
+	  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
+	  i2c_Rx = pdFALSE; // Standalone
+	  //csp_buffer_free_isr(i2c_Rx);	        // CSP
+	  //i2c_Rx = NULL; 							// CSP
 	  xSemaphoreGiveFromISR(busySem, NULL);
   }
 }
