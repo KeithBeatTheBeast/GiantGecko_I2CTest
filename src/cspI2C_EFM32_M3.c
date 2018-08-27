@@ -30,7 +30,8 @@
  *	CSP WHICH PROVIDES ACCESS TO BUFFERS.
  *
  *	Pull-up Resistors used:
- *	330 Ohms and 2.7 kOhms
+ *	330[Ohms] for 1Mbit/s testing and 2.7[kOhms] otherwise
+ *	A minimum pull-up resistor impedance of ~172[Ohms] is required at all speeds.
  *
  *	MTU Constraints:
  *	Due to the nature of the DMA controller on the EFM32 with the Cortex-M3, the maximum transmission
@@ -38,8 +39,8 @@
  *
  *	Performance: With the DMA integrated, this driver was tested and checked with a clock controlled
  *	variable of a 400kHz clock. Measuring the time it takes a transmission to complete on an oscilloscope,
- *	the time taken for a 20 byte (1 byte address + 19 byte frame) message is roughly 500 Microseconds.
- *  This entails a data rate of roughly 320kbit/s or 80% of maximum throughput.
+ *	the time taken for a 20 byte (1 byte address + 19 byte frame) message is roughly 500[uS].
+ *  This entails a data rate of roughly 320kbit/s or 80% of maximum potential throughput.
  *
  *  A different driver can be developed from this one for the
  *	Giant Gecko with the Cortex-M4, with the double-buffered
@@ -47,13 +48,15 @@
  *
  *	To Accomplish this upgrade, you would need to do the following:
  *
+ *	- Modify cspDMA_EFM32.c/h to work with the LDMA on the M4.
+ *
  *	- When the DMA IRQ goes off for Rx, you need to modify the equation for
- *	calculating the address of the CTRL register
+ *	calculating the address of the CTRL register because the hardware is different
  *
  *	- Likewise, when taking the # of transmissions left from the CTRL register,
  *	the equation used will need to be modified and account for the fact that the
  *	n_minus_1 (or equivalent) field is 11 bits long on the M4, where it is only
- *	10 bits long on the M3
+ *	10 bits long on the M3 (this doubles the MTU from 1024 to 2048)
  *
  *	- To exceed an MTU of 2048 bytes, the DMA needs to be configured to
  *	send 2 bytes (16 bits) at a time rather than 1 byte (8 bits) as it does now.
@@ -67,12 +70,12 @@
  *	leave 1/2 of the Tx buffer empty, then invoke the DMA on the base address of data.
  *
  *	CURRENT ISSUES:
- *	- The module doesn't like the transmit at its maximum MTU for long.
- *	If I give it a 1024byte frame it will transmit once or twice and then get locked up.
- *
- *	- Likewise, when the module locks itself up, even reports the error, it does not recover
- *	I cannot get it to properly reset and restart itself for additional transfers I have to reset
- *	the development board or re-flash it.
+ *	- The module when running with randomly encounter CLTO (SCL Low Timeout) interrupts and
+ *	locks itself up. Despite my best efforts to code it to cancel the current transmission and
+ *	reset itself to run again, I cannot get it to recover from this lockup.
+ *	If I disable CLTO interrupts, an ARBLOST (Arbitration Lost) interrupt is eventually thrown
+ *	and the same problem occurs.
+ *	When this happens I am forced to reset/re-flash the board.
  *
  *	- As the EFM32GG Dev board with the M3 can only route I2C SCL/SDA to one location
  *	each, this driver only works when all "handle" input args are set to '1' and only
