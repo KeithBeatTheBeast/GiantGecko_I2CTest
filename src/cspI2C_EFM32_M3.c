@@ -205,6 +205,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 				frame,						  // Source Address
 				CSP_I2C_HEADER_LEN + frame->len - 1); // Length of Transfer in Bytes
 
+		I2C_IntDisable(I2CRegs, I2C_IEN_CLTO | I2C_IEN_BITO); // Disable timeouts - the task semaphore wait will act as one.
 		I2CRegs->CMD |= I2C_CMD_START; // Issue the start condition
 
 		// Wait for the transfer to complete according to the timeout.
@@ -543,14 +544,15 @@ void I2C1_IRQHandler() {
   /*
    * Master has transmitted stop condition
    * Transmission is officially over
-   * Report success to upper layer
-   * Release semaphore
+   * Cease auto stop, clear ALL flags since We. Don't. Care.
+   * Report success to upper layer.
    */
   if (flags & I2C_IF_MSTOP) {
 	  I2C_IntClear(I2CRegs, i2c_IFC_flags);
-	  flags &= ~I2C_IF_SSTOP;
 	  I2CRegs->CTRL &= ~I2C_CTRL_AUTOSE;
+	  I2C_IntEnable(I2CRegs, I2C_IEN_CLTO | I2C_IEN_BITO);
 	  xSemaphoreGiveFromISR(busySem, NULL);
+	  return;
   }
 
   /*
@@ -608,6 +610,11 @@ void I2C1_IRQHandler() {
    * Cancel Auto-acks, abort transmission, return from ISR.
    * */
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
+
+	  if (I2CRegs->STATE & I2C_STATE_MASTER) {
+		  puts("I am master");
+	  }
+	  else {puts("I am slave");}
 	  if (flags & I2C_IF_BITO) {
 		  transmissionError |= BITO_ERR;
 	  }
