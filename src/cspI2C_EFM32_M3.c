@@ -216,7 +216,7 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 		// A driver-layer error has occurred. It may have been a timeout, or arbitration was lost, etc
 		if (transmissionError != NO_TRANS_ERR) {
 			// Right now in all cases, an abort command is issued, and we wait.
-			printf("%d\n", transmissionError);
+			printf("0x%x\n", transmissionError);
 			if (transmissionError & NACK_ERR) {
 				I2CRegs->CMD |= I2C_CMD_ABORT;
 				vTaskDelay(portTICK_PERIOD_MS);
@@ -611,10 +611,6 @@ void I2C1_IRQHandler() {
    * */
   if (flags & (I2C_IF_ARBLOST | I2C_IF_BUSERR | I2C_IF_CLTO | I2C_IF_BITO)) {
 
-	  if (I2CRegs->STATE & I2C_STATE_MASTER) {
-		  puts("I am master");
-	  }
-	  else {puts("I am slave");}
 	  if (flags & I2C_IF_BITO) {
 		  transmissionError |= BITO_ERR;
 	  }
