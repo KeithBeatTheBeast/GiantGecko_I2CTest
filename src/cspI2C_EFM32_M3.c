@@ -205,7 +205,12 @@ int i2c_send(int handle, i2c_frame_t *frame, uint16_t timeout) {
 				frame,						  // Source Address
 				CSP_I2C_HEADER_LEN + frame->len - 1); // Length of Transfer in Bytes
 
+		while(i2c_RxInProgress) { // TODO This may be the issue, a race condition between Tx and Rx.
+			vTaskDelay(100);
+		}
+
 		I2C_IntDisable(I2CRegs, I2C_IEN_CLTO | I2C_IEN_BITO); // Disable timeouts - the task semaphore wait will act as one.
+		I2C_IntClear(I2CRegs, I2C_IFC_CLTO | I2C_IEN_BITO); // Clear those ISR flags if they existed.
 		I2CRegs->CMD |= I2C_CMD_START; // Issue the start condition
 
 		// Wait for the transfer to complete according to the timeout.
