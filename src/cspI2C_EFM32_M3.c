@@ -556,6 +556,9 @@ void I2C1_IRQHandler() {
 			  cspBuf->len = cspBuf->len - 2;
 		  }
 
+		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
+				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
+
 		  // TODO this changes depending on standalone  or CSP
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
 		  //csp_i2c_rx(cspBuf, void * pxTaskWoken)  // CSP
