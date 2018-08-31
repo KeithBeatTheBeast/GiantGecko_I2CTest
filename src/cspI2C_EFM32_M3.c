@@ -102,7 +102,6 @@ static volatile bool i2c_RxInProgress, firstRx;
 
 // FreeRTOS handles
 static SemaphoreHandle_t busySem, waitSem; // Tx semaphores
-static QueueHandle_t 	 rxIndexQueue; // Rx Queues
 
 // Shared memory handle
 static SharedMem_t		 i2cSharedMem;
@@ -121,7 +120,7 @@ static inline int16_t *getRxDMACtrlAddr() {
 
 /********************************************************************
  * @brief Function called when DMA transfer is complete.
- * Execution depends on whether Tx or Rx completed.
+ * Only executes when Tx is done. Rx is handled in I2C ISR
  *
  * THIS FUNCTION IS CALLED IN AN ISR CONTEXT BY THE DMA'S IRQ
  *
@@ -143,21 +142,6 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	// This setting is cleared in the MSTOP condition of the I2C IRQ.
 	if (channel == DMA_CHANNEL_I2C_TX) {
 		I2CRegs->CTRL |= I2C_CTRL_AUTOSE;
-	}
-
-	// RX has completed
-	// Calculate the number of bytes that were received in a transmission
-	// Send to I2C IRQ.
-	// TODO might be a good idea to disable the DMA IRQ on the Rx channel and have the I2C IRQ do this.
-	else if (channel == DMA_CHANNEL_I2C_RX) {
-
-
-
-		// Send to I2C IRQ, which should immediantly receive as its lower priority and activated this interrupt.
-		// See what I meant about just having it do the calculation?
-		//if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
-		//	transmissionError |= F_QUEUE_ERR;
-		//}
 	}
 }
 
@@ -279,9 +263,9 @@ static void i2cDMA_ChannelInit(int TxChan, int TxReg, int RxChan, int RxReg) {
 	/* Setting up RX channel
 	 * Same as setting up the Tx Channel with Rx equivalents. */
 	rxChannelConfig.highPri    = true;
-	rxChannelConfig.enableInt  = true;
+	rxChannelConfig.enableInt  = false;
 	rxChannelConfig.select     = RxReg;
-	rxChannelConfig.cb 		   = &dmaCB;
+	rxChannelConfig.cb 		   = NULL;
 	DMA_CfgChannel(RxChan, &rxChannelConfig);
 
 	/* Setting up RX channel descriptor
@@ -300,7 +284,6 @@ static void i2cDMA_ChannelInit(int TxChan, int TxReg, int RxChan, int RxReg) {
 static inline void i2c_FreeRTOS_Structs_Del() {
 	vSemaphoreDelete(busySem);
 	vSemaphoreDelete(waitSem);
-	vQueueDelete(rxIndexQueue);
 }
 
 /******************************************************************************
@@ -310,14 +293,12 @@ static int8_t i2c_FreeRTOS_Structs_Init() {
 
 	busySem = xSemaphoreCreateBinary(); // The driver is busy with someone else's frame.
 	waitSem = xSemaphoreCreateBinary(); // The driver is attempting to transmit my frame.
-	rxIndexQueue = xQueueCreate(NUM_SH_MEM_BUFS, sizeof(int16_t)); // Passed from DMA IRQ to I2C IRQ TODO this can be removed if I2C IRQ calculates bytes sent.
 
 	// TODO Comment this out when working with CSP.
 	i2cSharedMem = xSharedMemoryCreate(sizeof(uint8_t) * I2C_MTU, NUM_SH_MEM_BUFS);
 
 	// If the initialization of one failed, the driver cannot work. Delete all of them!
-	if (busySem == NULL || waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE || \
-			rxIndexQueue == NULL) {
+	if (busySem == NULL || waitSem == NULL || xSemaphoreGive(waitSem) != pdTRUE) {
 		i2c_FreeRTOS_Structs_Del();
 		return CSP_ERR_NOMEM;
 	}
@@ -563,25 +544,17 @@ void I2C1_IRQHandler() {
 		  // Cast the Rx buffer as a CSP I2C Frame.
 		  i2c_frame_t *cspBuf = (i2c_frame_t*)i2c_Rx;
 
-		  // Tell the DMA to stop receiving bytes and report how many bytes were RX'd
-		  // NOTE: YOU ARE DEPENDANT ON THE DMA IRQ BEING OF HIGHER PRIORITY THAN THE I2C IRQ
-		  // THUS FORCING A CONTEXT SWITCH TO THE DMA IRQ THE MOMENT THIS FLAG IS RAISED
-		  DMA->IFS = DMA_COMPLETE_I2C_RX;
-
-		  /* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!
-		   *
-		   * The goal of this line is to isolate the n_minus_1 field, and shift it.
-		   * Then, we take the maximum # of bytes possible, subtract the previously calculated number and add 1.
-		   *
-		   */
+		  // VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!
+		  // The goal of this line is to isolate the n_minus_1 field, and shift it.
+		  // Then, we take the maximum # of bytes possible, subtract the previously calculated number and add 1.
 		  cspBuf->len = I2C_MTU + CSP_I2C_HEADER_LEN
 				  - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) + 1 ;
 
-			// I literally put this here to prevent a size misalignment on the first transfer.
-			if (firstRx) {
-				firstRx = false;
-				cspBuf->len = cspBuf->len - 2;
-			}
+		  // I literally put this here to prevent a size misalignment on the first transfer.
+		  if (firstRx) {
+			  firstRx = false;
+			  cspBuf->len = cspBuf->len - 2;
+		  }
 
 		  // TODO this changes depending on standalone  or CSP
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
@@ -628,14 +601,7 @@ void I2C1_IRQHandler() {
 
 	  // Tell the DMA to stop.
 	  // Receive it's item but do nothing with it.
-	  if (i2c_RxInProgress) {
-		  DMA->IFS = DMA_COMPLETE_I2C_RX;
-		  //uint16_t index;
-		  //if (xQueueReceiveFromISR(rxIndexQueue, &index, NULL) != pdTRUE) {
-		  //}
-	  }
-
-	  else {
+	  if (!i2c_RxInProgress) {
 		  DMA->IFS = DMA_COMPLETE_I2C_TX;
 	  }
 

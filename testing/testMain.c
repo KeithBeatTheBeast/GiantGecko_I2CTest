@@ -31,9 +31,6 @@ static void vI2CTransferTask(void *nothing) {
 		}
 		else {
 			printf("Frame Size: %d Error: %x Number of Runs: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, e, k);
-			if (e > 0x1) {
-				puts("Breakpoint here");
-			}
 		}
 	}
 }
