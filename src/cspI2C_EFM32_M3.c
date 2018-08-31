@@ -151,26 +151,13 @@ void i2cTransferComplete(unsigned int channel, bool primary, void *user) {
 	// TODO might be a good idea to disable the DMA IRQ on the Rx channel and have the I2C IRQ do this.
 	else if (channel == DMA_CHANNEL_I2C_RX) {
 
-		/* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!
-		 *
-		 * The goal of this line is to isolate the n_minus_1 field, and shift it.
-		 * Then, we take the maximum # of bytes possible, subtract the previously calculated number and add 1.
-		 *
-		 */
-		uint16_t count = I2C_MTU + CSP_I2C_HEADER_LEN
-				- ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) + 1 ;
 
-		// I literally put this here to prevent a size misalignment on the first transfer.
-		if (firstRx) {
-			firstRx = false;
-			count = count - 2;
-		}
 
 		// Send to I2C IRQ, which should immediantly receive as its lower priority and activated this interrupt.
 		// See what I meant about just having it do the calculation?
-		if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
-			transmissionError |= F_QUEUE_ERR;
-		}
+		//if (xQueueSendFromISR(rxIndexQueue, &count, NULL) != pdTRUE) {
+		//	transmissionError |= F_QUEUE_ERR;
+		//}
 	}
 }
 
@@ -580,11 +567,21 @@ void I2C1_IRQHandler() {
 		  // NOTE: YOU ARE DEPENDANT ON THE DMA IRQ BEING OF HIGHER PRIORITY THAN THE I2C IRQ
 		  // THUS FORCING A CONTEXT SWITCH TO THE DMA IRQ THE MOMENT THIS FLAG IS RAISED
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
-		  xQueueReceiveFromISR(rxIndexQueue, &(cspBuf->len), NULL);
 
-		  // TODO Debug printf if desired
-//		  printf("Padding: %x, Retries: %x, Reserved: %d, Dest: %x, Len_rx: %x, Len: %d, \n Data: %s\n", \
-//				  cspBuf->padding, cspBuf->retries, cspBuf->reserved, cspBuf->dest, cspBuf->len_rx, cspBuf->len, cspBuf->data);
+		  /* VERY IMPORTANT THIS IS HOW YOU GET RX DATA SIZE!!!
+		   *
+		   * The goal of this line is to isolate the n_minus_1 field, and shift it.
+		   * Then, we take the maximum # of bytes possible, subtract the previously calculated number and add 1.
+		   *
+		   */
+		  cspBuf->len = I2C_MTU + CSP_I2C_HEADER_LEN
+				  - ((*getRxDMACtrlAddr() & TRANS_REMAIN_MASK) >> TRANS_REMAIN_SHIFT) + 1 ;
+
+			// I literally put this here to prevent a size misalignment on the first transfer.
+			if (firstRx) {
+				firstRx = false;
+				cspBuf->len = cspBuf->len - 2;
+			}
 
 		  // TODO this changes depending on standalone  or CSP
 		  xSharedMemPutFromISR(i2cSharedMem, i2c_Rx, NULL); // Standalone
@@ -633,9 +630,9 @@ void I2C1_IRQHandler() {
 	  // Receive it's item but do nothing with it.
 	  if (i2c_RxInProgress) {
 		  DMA->IFS = DMA_COMPLETE_I2C_RX;
-		  uint16_t index;
-		  if (xQueueReceiveFromISR(rxIndexQueue, &index, NULL) != pdTRUE) {
-		  }
+		  //uint16_t index;
+		  //if (xQueueReceiveFromISR(rxIndexQueue, &index, NULL) != pdTRUE) {
+		  //}
 	  }
 
 	  else {
