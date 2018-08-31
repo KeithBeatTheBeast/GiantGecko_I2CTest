@@ -2,7 +2,7 @@
  * main.c
  *
  *  Created on: Jun 29, 2018
- *      Author: keith
+ *      Author: kgmills
  *
  *      THIS IS TEST CODE DO NOT ADD IMPORT IT INTO CSP AS PART OF THE DRIVER.
  */
@@ -15,6 +15,7 @@ static void vI2CTransferTask(void *nothing) {
 	i2c_frame_t *theFrame = pvPortMalloc(sizeof(i2c_frame_t));
 	memcpy(theFrame->data, "TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting TESTINGtesting ", I2C_MTU);
 	theFrame->dest = 0xE2;
+	// 54, 118, 246, 502, 1014 for 64, 128, 256, 512 and 1024 byte-sized packets each
 	theFrame->len = 246;
 	theFrame->len_rx = 0x40;
 	theFrame->padding = 0x21;
@@ -30,6 +31,9 @@ static void vI2CTransferTask(void *nothing) {
 		}
 		else {
 			printf("Frame Size: %d Error: %x Number of Runs: %d\n", theFrame->len + CSP_I2C_HEADER_LEN, e, k);
+			if (e > 0x1) {
+				puts("Breakpoint here");
+			}
 		}
 	}
 }
