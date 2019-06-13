@@ -1,4 +1,7 @@
 # GiantGecko_I2CTest
+
+_Work has ceased on this repo and is unlikely to be continued as the organization in question that would be using it has chosen opted to switch microcontroller families. Clone and use at your own risk._
+
 cspI2C_EFM32_M3.h
 
 Created on: Jun 29th, 2018
